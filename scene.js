@@ -1,5 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import { mechanismAt, SLIDE_PITCH, GATE_Z, CHANGE_MS } from './transition.js';
+import { snapshotLight } from './atmosphere.js';
 
 // Rear view reconstructed from the P150 photographs, including back.JPG.
 // The projection and its HDR surface stay outside this SDR geometry pass.
@@ -307,7 +308,7 @@ export class ProjectorScene {
     const p=this.machine.localToWorld(new THREE.Vector3(.58,.72,-1.72)).project(this.camera),r=this.canvas.getBoundingClientRect();
     return {x:r.left+(p.x+1)*r.width/2,y:r.top+(1-p.y)*r.height/2};
   }
-  resize(){const w=this.canvas.clientWidth,h=this.canvas.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.draw();}
+  resize(){const w=this.canvas.clientWidth,h=this.canvas.clientHeight,dpr=Math.min(devicePixelRatio,1.5);if(!w||!h||w===this.viewWidth&&h===this.viewHeight&&dpr===this.viewDpr)return;this.viewWidth=w;this.viewHeight=h;this.viewDpr=dpr;if(this.renderer.getPixelRatio()!==dpr)this.renderer.setPixelRatio(dpr);this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.draw();}
   illuminate(power,exposure,color=[.45,.42,.35],gain=1){
     this.power=power;this.light=exposure;this.exposureGain=gain;this.vents.visible=power>.01;
     this.glowMaterial.opacity=0;
@@ -343,7 +344,10 @@ export class ProjectorScene {
     this.machine.rotation.z=0;this.machine.position.y=0;this.leak=.48;this.updateSideLight();
     Object.assign(this.canvas.dataset,{mechanism:'idle',carriage:'0',ratchet:'0'});this.draw();
   }
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw();}}
   draw(){
+    if(this.batchDepth){this.drawPending=true;return;}
     if(this.armClip){this.machine.updateWorldMatrix(true,true);this.armClip.set(new THREE.Vector3(1,0,0),-1.105).applyMatrix4(this.machine.matrixWorld);}
     this.renderer.render(this.scene,this.camera);
   }
@@ -353,25 +357,47 @@ export class ProjectorScene {
 // only on image/viewport changes; the shutter modulates this preblurred light.
 export class WallLight {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.amount=1;this.exposure=0;this.color=[.45,.42,.35];}
-  setSource(source){
+  sampleSource(source){
     const c=document.createElement('canvas');c.width=48;c.height=48;const ctx=c.getContext('2d'),im=ctx.createImageData(48,48);let sum=[0,0,0];
     for(let y=0;y<48;y++)for(let x=0;x<48;x++){
       const sx=Math.min(source.width-1,Math.floor((x+.5)/48*source.width)),sy=Math.min(source.height-1,Math.floor((y+.5)/48*source.height)),i=(sy*source.width+sx)*4,o=(y*48+x)*4;
       for(let k=0;k<3;k++){const linear=Math.max(0,source.data[i+k]);const v=Math.pow(Math.min(linear,2)/(1+Math.max(0,linear-1)),1/2.2);im.data[o+k]=v*255;sum[k]+=v;}im.data[o+3]=255;
-    }ctx.putImageData(im,0,0);this.source=c;this.color=sum.map(v=>v/2304);this.rebuild();
+    }ctx.putImageData(im,0,0);return{source:c,color:sum.map(v=>v/2304)};
   }
-  resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){this.w=w;this.h=h;this.sw=sw;this.sh=sh;this.centerY=centerY;this.scale=Math.min(.5,800/w,600/h);this.canvas.width=Math.ceil(w*this.scale);this.canvas.height=Math.ceil(h*this.scale);this.rebuild();}
+  setSource(source){Object.assign(this,this.sampleSource(source));this.rebuild();}
+  layoutKey({w,h,sw,sh,centerY}){return[w,h,sw,sh,centerY].join(',');}
+  setLayout(layout){
+    Object.assign(this,layout);this.scale=Math.min(.5,800/this.w,600/this.h);const w=Math.ceil(this.w*this.scale),h=Math.ceil(this.h*this.scale);
+    if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
+  }
+  resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){const layout={w,h,sw,sh,centerY};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);this.rebuild();}
+  makeBuffer(source,layout){
+    const scale=Math.min(.5,800/layout.w,600/layout.h),w=Math.ceil(layout.w*scale),h=Math.ceil(layout.h*scale);
+    const c=document.createElement('canvas');c.width=w*3;c.height=h*3;const ctx=c.getContext('2d');
+    // Padding lets the halo travel with the film without exposing a buffer edge.
+    const sw=layout.sw*scale,sh=layout.sh*scale,cx=w*1.5,cy=h+layout.centerY*scale;
+    for(const [scale,blur,opacity] of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
+      ctx.globalAlpha=opacity;ctx.filter=`blur(${Math.max(4,blur)}px)`;ctx.drawImage(source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);
+    }ctx.filter='none';ctx.globalAlpha=1;return c;
+  }
+  async prepare(source,layout){
+    this.preparations??=new Map();const key=this.layoutKey(layout),cached=this.preparations.get(source);
+    if(cached?.key===key)return cached.pending;
+    const pending=(async()=>{const sampled=this.sampleSource(source),buffer=await snapshotLight(this.makeBuffer(sampled.source,layout));return{...sampled,layout,buffer};})();
+    const entry={key,pending};this.preparations.set(source,entry);entry.value=await pending;
+    for(const [old,item]of this.preparations)if(this.preparations.size>2&&old!==source&&item.value!==this.activePrepared){item.value?.buffer.close?.();this.preparations.delete(old);}
+    if(cached?.value!==this.activePrepared)cached?.value?.buffer.close?.();return entry.value;
+  }
+  activate(prepared){this.activePrepared=prepared;this.setLayout(prepared.layout);this.source=prepared.source;this.color=prepared.color;this.buffer=prepared.buffer;}
   rebuild(){
     if(!this.w||!this.source)return;
-    const c=this.buffer=document.createElement('canvas');c.width=this.canvas.width*3;c.height=this.canvas.height*3;const ctx=c.getContext('2d');
-    // Padding lets the halo travel with the film without exposing a buffer edge.
-    const w=this.canvas.width,h=this.canvas.height,sw=this.sw*this.scale,sh=this.sh*this.scale,cx=w*1.5,cy=h+this.centerY*this.scale;
-    for(const [scale,blur,opacity] of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
-      ctx.globalAlpha=opacity;ctx.filter=`blur(${Math.max(4,blur)}px)`;ctx.drawImage(this.source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);
-    }ctx.filter='none';ctx.globalAlpha=1;this.draw(this.exposure);
+    this.activePrepared=null;this.buffer=this.makeBuffer(this.source,this);this.draw(this.exposure);
   }
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw(this.exposure,this.pendingOptics);}}
   draw(exposure,optics){
-    this.exposure=exposure;const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
+    this.exposure=exposure;if(this.batchDepth){this.pendingOptics=optics;this.drawPending=true;return;}
+    const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
     if(this.buffer){
       ctx.save();ctx.globalAlpha=Math.min(1,exposure*this.amount*.82);
       if(optics&&(optics.phase==='out'||optics.phase==='in')){

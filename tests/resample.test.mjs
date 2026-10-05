@@ -92,9 +92,10 @@ test('both GPU paths upload only the prepared display-size HDR texture',async()=
     renderer.upload(source);assert.equal(descriptor.mipLevelCount,undefined);assert.equal(descriptor.format,'rgba16float');assert.deepEqual(descriptor.size,[2,1]);
     assert.deepEqual(writes.map(x=>[x[2].bytesPerRow,x[3]]),[[16,[2,1]]]);
     const uploads=[],parameters=[];
-    renderer.mode='webgl';renderer.gl={TEXTURE_2D:1,TEXTURE_MAX_LEVEL:2,RGBA16F:3,RGBA:4,HALF_FLOAT:5,bindTexture(){},texParameteri(...args){parameters.push(args);},texImage2D(...args){uploads.push(args);}};
-    renderer.upload(source);assert.deepEqual(uploads.map(x=>[x[1],x[3],x[4]]),[[0,2,1]]);
-    renderer.upload({data:new Float32Array([1,1,1,1]),width:1,height:1});assert.equal(parameters.at(-1)[2],0);
+    const glRenderer=new ProjectionRenderer({width:2,height:1},()=>{});glRenderer.draw=()=>{};glRenderer.halfSources=renderer.halfSources;
+    glRenderer.mode='webgl';glRenderer.gl={TEXTURE_2D:1,TEXTURE_MAX_LEVEL:2,RGBA16F:3,RGBA:4,HALF_FLOAT:5,createTexture(){return{};},bindTexture(){},texParameteri(...args){parameters.push(args);},texImage2D(...args){uploads.push(args);}};
+    glRenderer.upload(source);assert.deepEqual(uploads.map(x=>[x[1],x[3],x[4]]),[[0,2,1]]);
+    glRenderer.upload({data:new Float32Array([1,1,1,1]),width:1,height:1});assert.equal(parameters.at(-1)[2],0);
   }finally{if(oldUsage===undefined)delete globalThis.GPUTextureUsage;else globalThis.GPUTextureUsage=oldUsage;}
 });
 

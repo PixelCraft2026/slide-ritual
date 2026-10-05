@@ -430,9 +430,9 @@ fn encode(v:vec3f)->vec3f { let a=abs(v); return sign(v)*select(1.055*pow(a,vec3
   let uv=o.uv;let d=p.effects.y/p.size.xy;
   // Explicit gradients keep sampling valid inside uniform effect branches.
   let dx=dpdx(uv);let dy=dpdy(uv);
-  var c=textureSampleGrad(tex,sam,uv,dx,dy).rgb;
+  let center=textureSampleGrad(tex,sam,uv,dx,dy);var c=center.rgb;
   if(p.effects.y>0.){c=c*.4+(textureSampleGrad(tex,sam,uv+vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv+vec2f(0.,d.y),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(0.,d.y),dx,dy).rgb)*.15;}
-  if(p.effects.w>0.) { var moving=vec3f(0.);for(var i=-4;i<=4;i++){moving+=textureSample(tex,sam,uv+vec2f(f32(i)*p.effects.w/p.size.x,0.)).rgb/9.;}c=mix(c,moving,.85); }
+  if(p.effects.w>0.) { var moving=center.rgb/9.;for(var i=-4;i<=4;i++){if(i!=0){moving+=textureSampleGrad(tex,sam,uv+vec2f(f32(i)*p.effects.w/p.size.x,0.),dx,dy).rgb/9.;}}c=mix(c,moving,.85); }
   if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
   c*=p.effects.x;
   let l=max(dot(c,vec3f(.22897456,.69173852,.07928691)),0.00001);
@@ -443,7 +443,7 @@ fn encode(v:vec3f)->vec3f { let a=abs(v); return sign(v)*select(1.055*pow(a,vec3
   c+=vec3f(noise*.003*p.effects.z);
   c*=vec3f(1.,1.-.009*p.effects.z,1.-.025*p.effects.z);
   // rgba16float canvas values are encoded in its declared colorSpace.
-  if(p.size.z>.5){let alpha=clamp(textureSample(tex,sam,uv).a*p.size.w,0.,1.);return vec4f(encode(c)*alpha,alpha);}
+  if(p.size.z>.5){let alpha=clamp(center.a*p.size.w,0.,1.);return vec4f(encode(c)*alpha,alpha);}
   return vec4f(encode(c),1.);
 }`;
 
@@ -452,11 +452,11 @@ in vec2 pos;out vec2 uv;void main(){uv=pos*.5+.5;gl_Position=vec4(pos.x,-pos.y,0
 const fragmentGL=`#version 300 es
 precision highp float;uniform sampler2D tex;uniform vec4 effects;uniform vec4 source;uniform vec2 size;uniform vec2 transparency;in vec2 uv;out vec4 outputColor;
 vec3 encode(vec3 v){vec3 a=abs(v);return sign(v)*mix(1.055*pow(a,vec3(1./2.4))-.055,a*12.92,lessThanEqual(a,vec3(.0031308)));}
-void main(){vec2 d=effects.y/size;vec3 c=texture(tex,uv).rgb;if(effects.y>0.)c=c*.4+(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
-if(effects.w>0.){vec3 moving=vec3(0.);for(int i=-4;i<=4;i++){moving+=texture(tex,uv+vec2(float(i)*effects.w/size.x,0.)).rgb/9.;}c=mix(c,moving,.85);}
+void main(){vec2 d=effects.y/size;vec4 center=texture(tex,uv);vec3 c=center.rgb;if(effects.y>0.)c=c*.4+(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
+if(effects.w>0.){vec3 moving=center.rgb/9.;for(int i=-4;i<=4;i++){if(i!=0)moving+=texture(tex,uv+vec2(float(i)*effects.w/size.x,0.)).rgb/9.;}c=mix(c,moving,.85);}
 if(source.z>.5){c=vec3(dot(c,vec3(1.22494018,-.22494018,0.)),dot(c,vec3(-.04205695,1.04205695,0.)),dot(c,vec3(-.01963755,-.07863605,1.09827360)));}
 c*=effects.x;float l=max(dot(c,vec3(.2126,.7152,.0722)),.00001);if(source.x>.5)c*=min(1.,l/(1.+l)*1.25)/l;
-c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(texture(tex,uv).a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;
+c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(center.a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;
 
 async function decodeImage(image,viewport) {
   const scale=Math.min(1,2560/Math.max(image.naturalWidth,image.naturalHeight),Math.sqrt(3_000_000/(image.naturalWidth*image.naturalHeight)));
@@ -510,11 +510,10 @@ class ProjectionRenderer {
     gl.useProgram(this.program);const v=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
     const loc=gl.getAttribLocation(this.program,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     this.locations={effects:gl.getUniformLocation(this.program,'effects'),source:gl.getUniformLocation(this.program,'source'),size:gl.getUniformLocation(this.program,'size'),transparency:gl.getUniformLocation(this.program,'transparency')};
-    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     this.mode='webgl';this.hdr=false;
     this.canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();this.onFailure?.('显卡渲染连接已中断，请重新载入页面');});
   }
-  configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu')this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.transparent?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.draw();}
+  configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu'&&this.configuredHDR!==this.hdr){this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.transparent?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.configuredHDR=this.hdr;}this.draw();}
   prepare(source,viewport={width:this.canvas.width,height:this.canvas.height}){
     this.halfSources??=new WeakMap();
     if(!this.halfSources.has(source))this.halfSources.set(source,new Map());
@@ -543,15 +542,44 @@ class ProjectionRenderer {
     this.source=source;this.uploadProjection(projection);
   }
   uploadProjection(projection){
-    const {data,width,height}=projection;
+    const resource=this.textureResource(projection);this.activeResource=resource;
+    if(this.stagedResource===resource)this.stagedResource=null;
+    if(this.mode==='webgpu'){this.texture=resource.texture;this.bind=resource.bind;}
+    else if(this.mode==='webgl')this.tex=resource.texture;
+    this.uploadedProjection=projection;this.trimTextures();this.draw();
+  }
+  textureResource(projection){
+    this.textureSources??=new Map();
+    if(this.textureSources.has(projection))return this.textureSources.get(projection);
+    const {data,width,height}=projection,resource={projection};
     if(this.mode==='webgpu'){
-      this.texture?.destroy();this.texture=this.device.createTexture({size:[width,height],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
-      this.device.queue.writeTexture({texture:this.texture},data,{bytesPerRow:width*8},[width,height]);
-      this.bind=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()},{binding:1,resource:this.sampler},{binding:2,resource:{buffer:this.uniform}}]});
+      resource.texture=this.device.createTexture({size:[width,height],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+      this.device.queue.writeTexture({texture:resource.texture},data,{bytesPerRow:width*8},[width,height]);
+      resource.bind=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:resource.texture.createView()},{binding:1,resource:this.sampler},{binding:2,resource:{buffer:this.uniform}}]});
     }else if(this.mode==='webgl'){
-      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAX_LEVEL,0);g.texImage2D(g.TEXTURE_2D,0,g.RGBA16F,width,height,0,g.RGBA,g.HALF_FLOAT,data);
+      const g=this.gl;resource.texture=g.createTexture();g.bindTexture(g.TEXTURE_2D,resource.texture);
+      g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MIN_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAG_FILTER,g.LINEAR);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_S,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_WRAP_T,g.CLAMP_TO_EDGE);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAX_LEVEL,0);
+      g.texImage2D(g.TEXTURE_2D,0,g.RGBA16F,width,height,0,g.RGBA,g.HALF_FLOAT,data);g.bindTexture(g.TEXTURE_2D,this.tex||null);
     }
-    this.uploadedProjection=projection;this.draw();
+    this.textureSources.set(projection,resource);return resource;
+  }
+  trimTextures(keep){
+    for(const [projection,resource]of this.textureSources||[])if(this.textureSources.size>3&&resource!==this.activeResource&&resource!==this.stagedResource&&resource!==keep){
+      resource.texture?.destroy?.();if(this.mode==='webgl')this.gl.deleteTexture(resource.texture);this.textureSources.delete(projection);
+    }
+  }
+  async stage(source,viewport=this.canvas){
+    const ticket=this.stageTicket=(this.stageTicket||0)+1,projection=await this.prepare(source,viewport),resource=this.textureResource(projection);if(ticket===this.stageTicket)this.stagedResource=resource;this.trimTextures(resource);
+    if(!resource.ready)resource.ready=(async()=>{
+      if(this.mode==='webgpu')await this.device.queue.onSubmittedWorkDone();
+      else if(this.mode==='webgl'){
+        const g=this.gl,sync=g.fenceSync(g.SYNC_GPU_COMMANDS_COMPLETE,0);if(!sync)throw new Error('Texture upload fence unavailable');g.flush();
+        let checked=performance.now(),waited=0;
+        try{while(true){const status=g.clientWaitSync(sync,0,0);if(status===g.ALREADY_SIGNALED||status===g.CONDITION_SATISFIED)break;const now=performance.now();if(!globalThis.document?.hidden)waited+=now-checked;checked=now;if(status===g.WAIT_FAILED||g.isContextLost()||waited>5000)throw new Error('Texture upload did not complete');await new Promise(resolve=>setTimeout(resolve,8));}}
+        finally{g.deleteSync(sync);}
+      }
+    })();
+    await resource.ready;return projection;
   }
   refreshProjection(){
     if(this.transparent||!this.source||this.mode==='native'||this.canvas.hidden)return;
@@ -571,14 +599,17 @@ class ProjectionRenderer {
     refresh();
   }
   resize(width,height){const dpr=Math.min(devicePixelRatio||1,2),w=Math.max(1,Math.round(width*dpr)),h=Math.max(1,Math.round(height*dpr));if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;this.draw();this.refreshProjection();}
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw();}}
   draw(){
-    if(!this.source||!this.mode||this.mode==='native')return;
+    if(this.batchDepth){this.drawPending=true;return;}
+    if(!this.source||!this.mode||this.mode==='native'||this.canvas.hidden)return;
     const p=this.params,s=this.source;
     if(this.mode==='webgpu'&&this.bind){
       this.device.queue.writeBuffer(this.uniform,0,new Float32Array([p.brightness*p.boost,p.focus,p.texture,p.motion,s.hdr?1:0,this.hdr?1:0,s.colorSpace==='display-p3'?1:0,p.highlight,this.canvas.width,this.canvas.height,this.transparent?1:0,p.opacity]));
       const enc=this.device.createCommandEncoder();const pass=enc.beginRenderPass({colorAttachments:[{view:this.gpu.getCurrentTexture().createView(),loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:1}}]});pass.setPipeline(this.pipeline);pass.setBindGroup(0,this.bind);pass.draw(3);pass.end();this.device.queue.submit([enc.finish()]);
     }else if(this.mode==='webgl'){
-      const g=this.gl;g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(this.program);g.uniform4f(this.locations.effects,p.brightness*p.boost,p.focus,p.texture,p.motion);g.uniform4f(this.locations.source,s.hdr?1:0,0,s.colorSpace==='display-p3'?1:0,1);g.uniform2f(this.locations.size,this.canvas.width,this.canvas.height);g.uniform2f(this.locations.transparency,this.transparent?1:0,p.opacity);g.drawArrays(g.TRIANGLES,0,3);
+      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.viewport(0,0,this.canvas.width,this.canvas.height);g.useProgram(this.program);g.uniform4f(this.locations.effects,p.brightness*p.boost,p.focus,p.texture,p.motion);g.uniform4f(this.locations.source,s.hdr?1:0,0,s.colorSpace==='display-p3'?1:0,1);g.uniform2f(this.locations.size,this.canvas.width,this.canvas.height);g.uniform2f(this.locations.transparency,this.transparent?1:0,p.opacity);g.drawArrays(g.TRIANGLES,0,3);
     }
   }
 }
@@ -692,6 +723,7 @@ function projectionLayout(w,h,ratio,zoom=1){
   const short=Math.min(ratio,1/ratio),long=aperture*Math.min(1,1.68/(1+short));
   return {aperture,width:ratio>=1?long:long*ratio,height:ratio>=1?long/ratio:long};
 }
+
 
 
 
@@ -1002,7 +1034,7 @@ class ProjectorScene {
     const p=this.machine.localToWorld(new THREE.Vector3(.58,.72,-1.72)).project(this.camera),r=this.canvas.getBoundingClientRect();
     return {x:r.left+(p.x+1)*r.width/2,y:r.top+(1-p.y)*r.height/2};
   }
-  resize(){const w=this.canvas.clientWidth,h=this.canvas.clientHeight;if(!w||!h)return;this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.draw();}
+  resize(){const w=this.canvas.clientWidth,h=this.canvas.clientHeight,dpr=Math.min(devicePixelRatio,1.5);if(!w||!h||w===this.viewWidth&&h===this.viewHeight&&dpr===this.viewDpr)return;this.viewWidth=w;this.viewHeight=h;this.viewDpr=dpr;if(this.renderer.getPixelRatio()!==dpr)this.renderer.setPixelRatio(dpr);this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.draw();}
   illuminate(power,exposure,color=[.45,.42,.35],gain=1){
     this.power=power;this.light=exposure;this.exposureGain=gain;this.vents.visible=power>.01;
     this.glowMaterial.opacity=0;
@@ -1038,7 +1070,10 @@ class ProjectorScene {
     this.machine.rotation.z=0;this.machine.position.y=0;this.leak=.48;this.updateSideLight();
     Object.assign(this.canvas.dataset,{mechanism:'idle',carriage:'0',ratchet:'0'});this.draw();
   }
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw();}}
   draw(){
+    if(this.batchDepth){this.drawPending=true;return;}
     if(this.armClip){this.machine.updateWorldMatrix(true,true);this.armClip.set(new THREE.Vector3(1,0,0),-1.105).applyMatrix4(this.machine.matrixWorld);}
     this.renderer.render(this.scene,this.camera);
   }
@@ -1048,25 +1083,47 @@ class ProjectorScene {
 // only on image/viewport changes; the shutter modulates this preblurred light.
 class WallLight {
   constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.amount=1;this.exposure=0;this.color=[.45,.42,.35];}
-  setSource(source){
+  sampleSource(source){
     const c=document.createElement('canvas');c.width=48;c.height=48;const ctx=c.getContext('2d'),im=ctx.createImageData(48,48);let sum=[0,0,0];
     for(let y=0;y<48;y++)for(let x=0;x<48;x++){
       const sx=Math.min(source.width-1,Math.floor((x+.5)/48*source.width)),sy=Math.min(source.height-1,Math.floor((y+.5)/48*source.height)),i=(sy*source.width+sx)*4,o=(y*48+x)*4;
       for(let k=0;k<3;k++){const linear=Math.max(0,source.data[i+k]);const v=Math.pow(Math.min(linear,2)/(1+Math.max(0,linear-1)),1/2.2);im.data[o+k]=v*255;sum[k]+=v;}im.data[o+3]=255;
-    }ctx.putImageData(im,0,0);this.source=c;this.color=sum.map(v=>v/2304);this.rebuild();
+    }ctx.putImageData(im,0,0);return{source:c,color:sum.map(v=>v/2304)};
   }
-  resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){this.w=w;this.h=h;this.sw=sw;this.sh=sh;this.centerY=centerY;this.scale=Math.min(.5,800/w,600/h);this.canvas.width=Math.ceil(w*this.scale);this.canvas.height=Math.ceil(h*this.scale);this.rebuild();}
+  setSource(source){Object.assign(this,this.sampleSource(source));this.rebuild();}
+  layoutKey({w,h,sw,sh,centerY}){return[w,h,sw,sh,centerY].join(',');}
+  setLayout(layout){
+    Object.assign(this,layout);this.scale=Math.min(.5,800/this.w,600/this.h);const w=Math.ceil(this.w*this.scale),h=Math.ceil(this.h*this.scale);
+    if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;
+  }
+  resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){const layout={w,h,sw,sh,centerY};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);this.rebuild();}
+  makeBuffer(source,layout){
+    const scale=Math.min(.5,800/layout.w,600/layout.h),w=Math.ceil(layout.w*scale),h=Math.ceil(layout.h*scale);
+    const c=document.createElement('canvas');c.width=w*3;c.height=h*3;const ctx=c.getContext('2d');
+    // Padding lets the halo travel with the film without exposing a buffer edge.
+    const sw=layout.sw*scale,sh=layout.sh*scale,cx=w*1.5,cy=h+layout.centerY*scale;
+    for(const [scale,blur,opacity] of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
+      ctx.globalAlpha=opacity;ctx.filter=`blur(${Math.max(4,blur)}px)`;ctx.drawImage(source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);
+    }ctx.filter='none';ctx.globalAlpha=1;return c;
+  }
+  async prepare(source,layout){
+    this.preparations??=new Map();const key=this.layoutKey(layout),cached=this.preparations.get(source);
+    if(cached?.key===key)return cached.pending;
+    const pending=(async()=>{const sampled=this.sampleSource(source),buffer=await snapshotLight(this.makeBuffer(sampled.source,layout));return{...sampled,layout,buffer};})();
+    const entry={key,pending};this.preparations.set(source,entry);entry.value=await pending;
+    for(const [old,item]of this.preparations)if(this.preparations.size>2&&old!==source&&item.value!==this.activePrepared){item.value?.buffer.close?.();this.preparations.delete(old);}
+    if(cached?.value!==this.activePrepared)cached?.value?.buffer.close?.();return entry.value;
+  }
+  activate(prepared){this.activePrepared=prepared;this.setLayout(prepared.layout);this.source=prepared.source;this.color=prepared.color;this.buffer=prepared.buffer;}
   rebuild(){
     if(!this.w||!this.source)return;
-    const c=this.buffer=document.createElement('canvas');c.width=this.canvas.width*3;c.height=this.canvas.height*3;const ctx=c.getContext('2d');
-    // Padding lets the halo travel with the film without exposing a buffer edge.
-    const w=this.canvas.width,h=this.canvas.height,sw=this.sw*this.scale,sh=this.sh*this.scale,cx=w*1.5,cy=h+this.centerY*this.scale;
-    for(const [scale,blur,opacity] of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
-      ctx.globalAlpha=opacity;ctx.filter=`blur(${Math.max(4,blur)}px)`;ctx.drawImage(this.source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);
-    }ctx.filter='none';ctx.globalAlpha=1;this.draw(this.exposure);
+    this.activePrepared=null;this.buffer=this.makeBuffer(this.source,this);this.draw(this.exposure);
   }
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw(this.exposure,this.pendingOptics);}}
   draw(exposure,optics){
-    this.exposure=exposure;const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
+    this.exposure=exposure;if(this.batchDepth){this.pendingOptics=optics;this.drawPending=true;return;}
+    const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
     if(this.buffer){
       ctx.save();ctx.globalAlpha=Math.min(1,exposure*this.amount*.82);
       if(optics&&(optics.phase==='out'||optics.phase==='in')){
@@ -1082,6 +1139,12 @@ class WallLight {
 
 // A restrained screen-space approximation of illuminated air. The HDR photo
 // remains on its own, unfiltered surface above this pass.
+async function snapshotLight(canvas){
+  let image=canvas;if(typeof createImageBitmap==='function'){try{image=await createImageBitmap(canvas);}catch{/* Use the already rendered canvas on older implementations. */}}
+  // Force deferred blur/raster work to finish while no transport is running.
+  // A one-pixel readback avoids copying the full padded lighting surface.
+  const warm=document.createElement('canvas');warm.width=warm.height=1;const ctx=warm.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,1,1);ctx.getImageData(0,0,1,1);return image;
+}
 class AirLight {
   constructor(canvas){
     this.canvas=canvas;this.ctx=canvas.getContext('2d');this.exposure=0;this.color=[.45,.42,.35];this.amount=1.4;
@@ -1099,13 +1162,16 @@ class AirLight {
   }
   shouldAnimate(){return this.exposure>0&&this.amount>0&&!this.reduced.matches&&!document.hidden;}
   schedule(){
+    if(this.transport){const now=performance.now();if(now-this.last>=32){this.time+=Math.min(.08,(now-this.last)/1000);this.last=now;}this.draw();return;}
     if(this.shouldAnimate()){if(this.frame==null){this.last=performance.now();this.frame=requestAnimationFrame(this.tick);}}
     else {cancelAnimationFrame(this.frame);this.frame=null;}
     this.draw();
   }
+  setTransport(active){if(this.transport===active)return;this.transport=active;cancelAnimationFrame(this.frame);this.frame=null;this.last=performance.now();if(!active)this.schedule();}
+  layoutKey(layout,color=this.color){return[layout.w,layout.h,layout.sw,layout.sh,layout.centerY,layout.lens?.x,layout.lens?.y,Math.min(devicePixelRatio,1.25),this.amount,...color].join(',');}
+  setLayout(layout){Object.assign(this,layout);this.scale=Math.min(devicePixelRatio,1.25);const w=Math.ceil(this.w*this.scale),h=Math.ceil(this.h*this.scale);if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;}
   resize(w,h,sw,sh,lens,centerY=h*(w<600?.34:.31)){
-    this.w=w;this.h=h;this.sw=sw;this.sh=sh;this.centerY=centerY;this.lens=lens||{x:w*.54,y:h*.64};
-    this.scale=Math.min(devicePixelRatio,1.25);this.canvas.width=Math.ceil(w*this.scale);this.canvas.height=Math.ceil(h*this.scale);
+    const layout={w,h,sw,sh,centerY,lens:lens||{x:w*.54,y:h*.64}};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);
     this.rebuild();this.draw();
   }
   illuminate(exposure,color,optics){
@@ -1122,26 +1188,37 @@ class AirLight {
     const dx=optics?(optics.shift-optics.clipRight*.5)*this.sw:0;
     return {wallY,t,x:source.x+(this.w/2+dx-source.x)*t,halfWidth:(3*(1-t)+this.sw/2*t)*factor};
   }
-  rebuild(){
-    if(!this.w)return;
-    const c=this.beam=document.createElement('canvas');c.width=Math.ceil(this.w*.5);c.height=Math.ceil(this.h*.5);
+  makeBeam(layout,color){
+    const c=document.createElement('canvas');c.width=Math.ceil(layout.w*.5);c.height=Math.ceil(layout.h*.5);
     const ctx=c.getContext('2d');ctx.scale(.5,.5);
-    const source=this.lens,top=this.section(0).wallY;
-    Object.assign(this.canvas.dataset,{baseWidth:String(this.sw),baseY:String(top)});
-    const rgb=this.color.map((v,i)=>Math.round(155+Math.min(1,v)*75+(i===0?10:0))).join(',');
+    const source=layout.lens,section=y=>this.section.call(layout,y),top=section(0).wallY;
+    const rgb=color.map((v,i)=>Math.round(155+Math.min(1,v)*75+(i===0?10:0))).join(',');
     // Overlapping soft cross sections have no hard triangular cone boundary.
     // The wall image hides the far end, the machine hides the lens endpoint.
-    ctx.save();ctx.beginPath();ctx.moveTo(this.w/2-this.sw/2,top);ctx.lineTo(this.w/2+this.sw/2,top);ctx.lineTo(source.x+3,source.y);ctx.lineTo(source.x-3,source.y);ctx.closePath();ctx.clip();
+    ctx.save();ctx.beginPath();ctx.moveTo(layout.w/2-layout.sw/2,top);ctx.lineTo(layout.w/2+layout.sw/2,top);ctx.lineTo(source.x+3,source.y);ctx.lineTo(source.x-3,source.y);ctx.closePath();ctx.clip();
     ctx.filter='blur(5px)';
     for(let y=top;y<source.y;y+=4){
-      const {t,x:cx,halfWidth:width}=this.section(y),fade=Math.sqrt(t)*(1-.25*t);
+      const {t,x:cx,halfWidth:width}=section(y),fade=Math.sqrt(t)*(1-.25*t);
       const g=ctx.createLinearGradient(cx-width,y,cx+width,y),a=.04*this.amount*fade;
       g.addColorStop(0,`rgba(${rgb},0)`);g.addColorStop(.22,`rgba(${rgb},${a*.35})`);g.addColorStop(.5,`rgba(${rgb},${a})`);g.addColorStop(.78,`rgba(${rgb},${a*.35})`);g.addColorStop(1,`rgba(${rgb},0)`);
       ctx.fillStyle=g;ctx.fillRect(cx-width,y,width*2,5);
     }
-    ctx.restore();
+    ctx.restore();return c;
   }
+  async prepare(layout,color){
+    this.preparations??=new Map();const key=this.layoutKey(layout,color);if(this.preparations.has(key))return this.preparations.get(key).pending;
+    const pending=(async()=>({layout,color,beam:await snapshotLight(this.makeBeam(layout,color)),key}))(),entry={pending};this.preparations.set(key,entry);entry.value=await pending;
+    for(const [old,item]of this.preparations)if(this.preparations.size>2&&old!==key&&item.value!==this.activePrepared){item.value?.beam.close?.();this.preparations.delete(old);}
+    return entry.value;
+  }
+  activate(prepared){this.activePrepared=prepared;this.setLayout(prepared.layout);this.color=prepared.color;this.beam=prepared.beam;Object.assign(this.canvas.dataset,{baseWidth:String(this.sw),baseY:String(this.section(0).wallY)});}
+  rebuild(){
+    if(!this.w)return;this.activePrepared=null;this.beam=this.makeBeam(this,this.color);Object.assign(this.canvas.dataset,{baseWidth:String(this.sw),baseY:String(this.section(0).wallY)});
+  }
+  beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
+  endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw();}}
   draw(){
+    if(this.batchDepth){this.drawPending=true;return;}
     const ctx=this.ctx;if(!this.w)return;
     ctx.setTransform(this.scale,0,0,this.scale,0,0);ctx.clearRect(0,0,this.w,this.h);
     const intensity=Math.min(1.5,this.exposure)*this.amount;
@@ -1252,6 +1329,7 @@ let renderer=new ProjectionRenderer($('projection'),message=>toast(message)),aut
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
 const machineLight=new MachineLight($('machineGlow'));
 let exposure=0;
+let transporting=false,layoutPending=false,projectionWidth=0;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 function mountProjection(aperture){(aperture?document.querySelector('.empty-gate'):$('filmMotion')).prepend(renderer.canvas);}
@@ -1309,21 +1387,27 @@ function renderTray(){
   });
   updateUI();
 }
-function fitScreen(){
-  const stage=document.querySelector('.projection-stage'),slide=state.slides[state.index];
+function presentationLayout(slide=state.slides[state.index],apertureMode=state.aperture){
+  const stage=document.querySelector('.projection-stage');
   const ratio=slide?(slide.width/slide.height):1.5;
   const zoom=Number($('zoom').value);
   const {width,height,aperture}=projectionLayout(stage.clientWidth,stage.clientHeight,ratio,zoom);
+  const w=room.clientWidth,h=room.clientHeight,centerY=h*((w<600?.34:.31)-Number($('photoY').value)/100),lens=scene?.lensPosition()||{x:w*.54,y:h*.64};
+  return{w,h,width,height,aperture,centerY,lens,sw:apertureMode?aperture:width,sh:apertureMode?aperture:height};
+}
+function applyLayout(layout,prepared){
+  const {w,h,width,height,aperture,centerY,sw,sh,lens}=layout;projectionWidth=Math.round(width);
   screen.style.width=`${width}px`;screen.style.height=`${height}px`;
   room.style.setProperty('--screen-width',`${width}px`);room.style.setProperty('--screen-height',`${height}px`);
   room.style.setProperty('--aperture-size',`${aperture}px`);
-  const centerY=room.clientHeight*((room.clientWidth<600?.34:.31)-Number($('photoY').value)/100);
   room.style.setProperty('--projection-center',`${centerY}px`);
-  renderer.resize(state.aperture?aperture:width,state.aperture?aperture:height);
-  const lightW=state.aperture?aperture:width,lightH=state.aperture?aperture:height;
-  wall.resize(room.clientWidth,room.clientHeight,lightW,lightH,centerY);scene?.resize();
-  air.resize(room.clientWidth,room.clientHeight,lightW,lightH,scene?.lensPosition(),centerY);
-  machineLight.resize(room.clientWidth,room.clientHeight,scene,Number($('depth').value));
+  if(!renderer.canvas.hidden)renderer.resize(sw,sh);
+  if(prepared){wall.activate(prepared.wall);air.activate(prepared.air);}
+  else{wall.resize(w,h,sw,sh,centerY);air.resize(w,h,sw,sh,lens,centerY);machineLight.resize(w,h,scene,Number($('depth').value));}
+}
+function fitScreen(){
+  if(transporting){layoutPending=true;return;}
+  scene?.resize();applyLayout(presentationLayout());
 }
 function loadImage(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('浏览器无法解码这张照片，请转换为 JPG、PNG、AVIF 或 .hdr'));image.src=url;});}
 function preparationViewport(slide){
@@ -1344,24 +1428,32 @@ async function loadSlide(slide){
   if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
   cache.set(slide,result);while(cache.size>2)cache.delete(cache.keys().next().value);return result;
 }
-function setSpill(source){
+function spillColor(source){
   let sum=[0,0,0],count=0;
   for(let i=0;i<source.data.length;i+=Math.max(4,Math.floor(source.data.length/4096/4)*4)){for(let c=0;c<3;c++)sum[c]+=Math.sqrt(Math.max(0,Math.min(1,source.data[i+c])));count++;}
-  room.style.setProperty('--spill',sum.map(x=>Math.round(80+(x/count)*110)).join(','));
-  wall.setSource(source);light(exposure);
+  return sum.map(x=>Math.round(80+(x/count)*110)).join(',');
 }
-function present(slide,loaded){
+async function preparePresentation(slide,loaded){
+  scene?.resize();const layout=presentationLayout(slide,false),dpr=Math.min(devicePixelRatio||1,2),viewport={width:Math.max(1,Math.round(layout.width*dpr)),height:Math.max(1,Math.round(layout.height*dpr))};
+  machineLight.resize(layout.w,layout.h,scene,Number($('depth').value));
+  if(!loaded.native&&renderer.mode!=='native')await renderer.stage(loaded.source,viewport);
+  else if(renderer.mode==='native'&&!loaded.image&&!loaded.nativeURL){
+    // Build the Radiance SDR fallback before transport, including PNG encoding.
+    const src=loaded.source,canvas=document.createElement('canvas');canvas.width=src.width;canvas.height=src.height;const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(src.width,src.height);
+    for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
+    ctx.putImageData(pixels,0,0);loaded.nativeURL=canvas.toDataURL();loaded.native=true;loaded.fallbackImage=await loadImage(loaded.nativeURL);
+  }
+  await (loaded.image||loaded.fallbackImage)?.decode?.();
+  const preparedWall=await wall.prepare(loaded.source,layout),preparedAir=await air.prepare(layout,preparedWall.color);
+  const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded);
+  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source)};
+}
+function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);native.hidden=!state.native;renderer.canvas.hidden=state.native;
-  if(state.native){native.src=slide.url;native.alt=slide.name;}
-  else {native.removeAttribute('src');renderer.upload(loaded.source,preparationViewport(slide));}
-  if(renderer.mode==='native'&&!state.native&&loaded.source){
-    // Last-resort SDR display for Radiance when neither graphics API is available.
-    const src=loaded.source,canvas=document.createElement('canvas');canvas.width=src.width;canvas.height=src.height;const ctx=canvas.getContext('2d');const pixels=ctx.createImageData(src.width,src.height);
-    for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
-    ctx.putImageData(pixels,0,0);native.src=canvas.toDataURL();native.hidden=false;renderer.canvas.hidden=true;state.native=true;state.nativeHDR=false;
-  }
-  setSpill(loaded.source);fitScreen();displayStatus();
+  if(state.native){native.src=loaded.nativeURL||slide.url;native.alt=slide.name;}
+  else {native.removeAttribute('src');renderer.upload(loaded.source,prepared.viewport);}
+  room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
   for(const id of ['brightness','focus'])$(id).disabled=Boolean(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');
@@ -1382,17 +1474,18 @@ function setOptics(frame){
   gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';
   renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native)applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
-  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*screen.clientWidth;
+  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
-  glow.style.width=`${screen.clientWidth*Math.max(.15,1-frame.clipRight)}px`;
+  glow.style.width=`${projectionWidth*Math.max(.15,1-frame.clipRight)}px`;
   light(frame.exposure,frame);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture)fitScreen();light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function stopAuto(){state.auto=false;clearTimeout(autoTimer);autoTimer=null;updateUI();}
 function scheduleAuto(){clearTimeout(autoTimer);if(!state.auto||!state.on||document.hidden)return;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=state.index+1;if(next>=state.slides.length&&!$('loop').checked){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);}
 
 function animateTransport(epoch,reverse,opening,onSwap){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS;
+  transporting=true;air.setTransport(true);
   audio.advance(reverse,duration/1000);room.classList.add('changing');
   const start=performance.now();let swapped=false;
   return new Promise(resolve=>{
@@ -1400,6 +1493,8 @@ function animateTransport(epoch,reverse,opening,onSwap){
     function frame(now){
       if(epoch!==state.epoch){resolve();return;}
       const ms=Math.max(0,Math.min(duration,now-start)),f=opening?startupAt(ms):transitionAt(ms);
+      renderer.beginFrame();machineLight.renderer.beginFrame();scene?.beginFrame();wall.beginFrame();air.beginFrame();
+      try{
       if(f.swap&&!swapped){onSwap();swapped=true;}
       if(reduceMotion.matches){f.shift=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
       if(opening&&!swapped){
@@ -1411,10 +1506,11 @@ function animateTransport(epoch,reverse,opening,onSwap){
       }
       room.dataset.phase=(opening?'startup-':'')+f.phase;
       if(!reduceMotion.matches)scene?.mechanism(opening?f.mechanicalMs:ms,reverse);
+      }finally{renderer.endFrame();machineLight.renderer.endFrame();scene?.endFrame();wall.endFrame();air.endFrame();}
       if(ms<duration)transitionFrame=requestAnimationFrame(frame);else resolve();
     }
     transitionFrame=requestAnimationFrame(frame);
-  });
+  }).finally(()=>{if(epoch===state.epoch){transporting=false;air.setTransport(false);}});
 }
 
 async function power(){
@@ -1423,7 +1519,8 @@ async function power(){
   if(state.busy||!state.slides.length)return;
   state.busy=true;const epoch=++state.epoch;updateUI();
   try{
-    const unlock=audio.unlock(),loaded=await loadSlide(state.slides[state.index]);await unlock;
+    const unlock=audio.unlock(),loaded=await loadSlide(state.slides[state.index]);await unlock;if(epoch!==state.epoch)return;
+    const prepared=await preparePresentation(state.slides[state.index],loaded);
     if(epoch!==state.epoch)return;
     audio.click();audio.startFan();$('opticalGate').style.opacity='0';
     state.on=true;state.aperture=true;state.native=false;state.nativeHDR=false;
@@ -1436,7 +1533,7 @@ async function power(){
     // The same linear white and SDR/HDR rendering as a white photograph.
     // The five-second viewing interval also applies with reduced motion.
     await delay(APERTURE_HOLD_MS);if(epoch!==state.epoch)return;
-    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(state.slides[state.index],loaded);});
+    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(state.slides[state.index],loaded,prepared);});
     if(epoch!==state.epoch)return;
     resetTransition();state.started=true;state.busy=false;updateUI();scheduleAuto();
   }catch(error){if(epoch!==state.epoch)return;state.busy=false;state.on=false;audio.stopFan();room.style.setProperty('--lamp','0');resetTransition();updateUI();toast(error.message);}
@@ -1450,7 +1547,8 @@ async function goTo(index){
   state.busy=true;clearTimeout(autoTimer);const epoch=++state.epoch;updateUI();
   try{
     const slide=state.slides[index],loaded=await loadSlide(slide);if(epoch!==state.epoch)return;
-    await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded);updateMeta();});
+    const prepared=await preparePresentation(slide,loaded);if(epoch!==state.epoch)return;
+    await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();
     const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
@@ -1492,7 +1590,7 @@ async function importFiles(files,{folder=false}={}){
   if(slides.length){
     if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();}else state.slides.push(...slides);
     renderTray();fitScreen();
-    if(state.on){try{present(state.slides[state.index],await loadSlide(state.slides[state.index]));state.started=true;}catch(error){toast(error.message);}}
+    if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);present(slide,loaded,prepared);state.started=true;}catch(error){toast(error.message);}}
     toast(`已装入 ${slides.length} 张照片${failures.length?`\n${failures.length} 张未装入：${failures.slice(0,2).join('；')}`:''}`);
   }else toast(failures.slice(0,3).join('\n')||'没有可装入的照片');
   state.importing=false;updateUI();$('fileInput').value='';$('folderInput').value='';

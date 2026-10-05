@@ -28,6 +28,7 @@ let renderer=new ProjectionRenderer($('projection'),message=>toast(message)),aut
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
 const machineLight=new MachineLight($('machineGlow'));
 let exposure=0;
+let transporting=false,layoutPending=false,projectionWidth=0;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 function mountProjection(aperture){(aperture?document.querySelector('.empty-gate'):$('filmMotion')).prepend(renderer.canvas);}
@@ -85,21 +86,27 @@ function renderTray(){
   });
   updateUI();
 }
-function fitScreen(){
-  const stage=document.querySelector('.projection-stage'),slide=state.slides[state.index];
+function presentationLayout(slide=state.slides[state.index],apertureMode=state.aperture){
+  const stage=document.querySelector('.projection-stage');
   const ratio=slide?(slide.width/slide.height):1.5;
   const zoom=Number($('zoom').value);
   const {width,height,aperture}=projectionLayout(stage.clientWidth,stage.clientHeight,ratio,zoom);
+  const w=room.clientWidth,h=room.clientHeight,centerY=h*((w<600?.34:.31)-Number($('photoY').value)/100),lens=scene?.lensPosition()||{x:w*.54,y:h*.64};
+  return{w,h,width,height,aperture,centerY,lens,sw:apertureMode?aperture:width,sh:apertureMode?aperture:height};
+}
+function applyLayout(layout,prepared){
+  const {w,h,width,height,aperture,centerY,sw,sh,lens}=layout;projectionWidth=Math.round(width);
   screen.style.width=`${width}px`;screen.style.height=`${height}px`;
   room.style.setProperty('--screen-width',`${width}px`);room.style.setProperty('--screen-height',`${height}px`);
   room.style.setProperty('--aperture-size',`${aperture}px`);
-  const centerY=room.clientHeight*((room.clientWidth<600?.34:.31)-Number($('photoY').value)/100);
   room.style.setProperty('--projection-center',`${centerY}px`);
-  renderer.resize(state.aperture?aperture:width,state.aperture?aperture:height);
-  const lightW=state.aperture?aperture:width,lightH=state.aperture?aperture:height;
-  wall.resize(room.clientWidth,room.clientHeight,lightW,lightH,centerY);scene?.resize();
-  air.resize(room.clientWidth,room.clientHeight,lightW,lightH,scene?.lensPosition(),centerY);
-  machineLight.resize(room.clientWidth,room.clientHeight,scene,Number($('depth').value));
+  if(!renderer.canvas.hidden)renderer.resize(sw,sh);
+  if(prepared){wall.activate(prepared.wall);air.activate(prepared.air);}
+  else{wall.resize(w,h,sw,sh,centerY);air.resize(w,h,sw,sh,lens,centerY);machineLight.resize(w,h,scene,Number($('depth').value));}
+}
+function fitScreen(){
+  if(transporting){layoutPending=true;return;}
+  scene?.resize();applyLayout(presentationLayout());
 }
 function loadImage(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('浏览器无法解码这张照片，请转换为 JPG、PNG、AVIF 或 .hdr'));image.src=url;});}
 function preparationViewport(slide){
@@ -120,24 +127,32 @@ async function loadSlide(slide){
   if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
   cache.set(slide,result);while(cache.size>2)cache.delete(cache.keys().next().value);return result;
 }
-function setSpill(source){
+function spillColor(source){
   let sum=[0,0,0],count=0;
   for(let i=0;i<source.data.length;i+=Math.max(4,Math.floor(source.data.length/4096/4)*4)){for(let c=0;c<3;c++)sum[c]+=Math.sqrt(Math.max(0,Math.min(1,source.data[i+c])));count++;}
-  room.style.setProperty('--spill',sum.map(x=>Math.round(80+(x/count)*110)).join(','));
-  wall.setSource(source);light(exposure);
+  return sum.map(x=>Math.round(80+(x/count)*110)).join(',');
 }
-function present(slide,loaded){
+async function preparePresentation(slide,loaded){
+  scene?.resize();const layout=presentationLayout(slide,false),dpr=Math.min(devicePixelRatio||1,2),viewport={width:Math.max(1,Math.round(layout.width*dpr)),height:Math.max(1,Math.round(layout.height*dpr))};
+  machineLight.resize(layout.w,layout.h,scene,Number($('depth').value));
+  if(!loaded.native&&renderer.mode!=='native')await renderer.stage(loaded.source,viewport);
+  else if(renderer.mode==='native'&&!loaded.image&&!loaded.nativeURL){
+    // Build the Radiance SDR fallback before transport, including PNG encoding.
+    const src=loaded.source,canvas=document.createElement('canvas');canvas.width=src.width;canvas.height=src.height;const ctx=canvas.getContext('2d'),pixels=ctx.createImageData(src.width,src.height);
+    for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
+    ctx.putImageData(pixels,0,0);loaded.nativeURL=canvas.toDataURL();loaded.native=true;loaded.fallbackImage=await loadImage(loaded.nativeURL);
+  }
+  await (loaded.image||loaded.fallbackImage)?.decode?.();
+  const preparedWall=await wall.prepare(loaded.source,layout),preparedAir=await air.prepare(layout,preparedWall.color);
+  const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded);
+  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source)};
+}
+function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);native.hidden=!state.native;renderer.canvas.hidden=state.native;
-  if(state.native){native.src=slide.url;native.alt=slide.name;}
-  else {native.removeAttribute('src');renderer.upload(loaded.source,preparationViewport(slide));}
-  if(renderer.mode==='native'&&!state.native&&loaded.source){
-    // Last-resort SDR display for Radiance when neither graphics API is available.
-    const src=loaded.source,canvas=document.createElement('canvas');canvas.width=src.width;canvas.height=src.height;const ctx=canvas.getContext('2d');const pixels=ctx.createImageData(src.width,src.height);
-    for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
-    ctx.putImageData(pixels,0,0);native.src=canvas.toDataURL();native.hidden=false;renderer.canvas.hidden=true;state.native=true;state.nativeHDR=false;
-  }
-  setSpill(loaded.source);fitScreen();displayStatus();
+  if(state.native){native.src=loaded.nativeURL||slide.url;native.alt=slide.name;}
+  else {native.removeAttribute('src');renderer.upload(loaded.source,prepared.viewport);}
+  room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
   for(const id of ['brightness','focus'])$(id).disabled=Boolean(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');
@@ -158,17 +173,18 @@ function setOptics(frame){
   gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';
   renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native)applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
-  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*screen.clientWidth;
+  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
-  glow.style.width=`${screen.clientWidth*Math.max(.15,1-frame.clipRight)}px`;
+  glow.style.width=`${projectionWidth*Math.max(.15,1-frame.clipRight)}px`;
   light(frame.exposure,frame);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture)fitScreen();light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function stopAuto(){state.auto=false;clearTimeout(autoTimer);autoTimer=null;updateUI();}
 function scheduleAuto(){clearTimeout(autoTimer);if(!state.auto||!state.on||document.hidden)return;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=state.index+1;if(next>=state.slides.length&&!$('loop').checked){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);}
 
 function animateTransport(epoch,reverse,opening,onSwap){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS;
+  transporting=true;air.setTransport(true);
   audio.advance(reverse,duration/1000);room.classList.add('changing');
   const start=performance.now();let swapped=false;
   return new Promise(resolve=>{
@@ -176,6 +192,8 @@ function animateTransport(epoch,reverse,opening,onSwap){
     function frame(now){
       if(epoch!==state.epoch){resolve();return;}
       const ms=Math.max(0,Math.min(duration,now-start)),f=opening?startupAt(ms):transitionAt(ms);
+      renderer.beginFrame();machineLight.renderer.beginFrame();scene?.beginFrame();wall.beginFrame();air.beginFrame();
+      try{
       if(f.swap&&!swapped){onSwap();swapped=true;}
       if(reduceMotion.matches){f.shift=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
       if(opening&&!swapped){
@@ -187,10 +205,11 @@ function animateTransport(epoch,reverse,opening,onSwap){
       }
       room.dataset.phase=(opening?'startup-':'')+f.phase;
       if(!reduceMotion.matches)scene?.mechanism(opening?f.mechanicalMs:ms,reverse);
+      }finally{renderer.endFrame();machineLight.renderer.endFrame();scene?.endFrame();wall.endFrame();air.endFrame();}
       if(ms<duration)transitionFrame=requestAnimationFrame(frame);else resolve();
     }
     transitionFrame=requestAnimationFrame(frame);
-  });
+  }).finally(()=>{if(epoch===state.epoch){transporting=false;air.setTransport(false);}});
 }
 
 async function power(){
@@ -199,7 +218,8 @@ async function power(){
   if(state.busy||!state.slides.length)return;
   state.busy=true;const epoch=++state.epoch;updateUI();
   try{
-    const unlock=audio.unlock(),loaded=await loadSlide(state.slides[state.index]);await unlock;
+    const unlock=audio.unlock(),loaded=await loadSlide(state.slides[state.index]);await unlock;if(epoch!==state.epoch)return;
+    const prepared=await preparePresentation(state.slides[state.index],loaded);
     if(epoch!==state.epoch)return;
     audio.click();audio.startFan();$('opticalGate').style.opacity='0';
     state.on=true;state.aperture=true;state.native=false;state.nativeHDR=false;
@@ -212,7 +232,7 @@ async function power(){
     // The same linear white and SDR/HDR rendering as a white photograph.
     // The five-second viewing interval also applies with reduced motion.
     await delay(APERTURE_HOLD_MS);if(epoch!==state.epoch)return;
-    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(state.slides[state.index],loaded);});
+    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(state.slides[state.index],loaded,prepared);});
     if(epoch!==state.epoch)return;
     resetTransition();state.started=true;state.busy=false;updateUI();scheduleAuto();
   }catch(error){if(epoch!==state.epoch)return;state.busy=false;state.on=false;audio.stopFan();room.style.setProperty('--lamp','0');resetTransition();updateUI();toast(error.message);}
@@ -226,7 +246,8 @@ async function goTo(index){
   state.busy=true;clearTimeout(autoTimer);const epoch=++state.epoch;updateUI();
   try{
     const slide=state.slides[index],loaded=await loadSlide(slide);if(epoch!==state.epoch)return;
-    await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded);updateMeta();});
+    const prepared=await preparePresentation(slide,loaded);if(epoch!==state.epoch)return;
+    await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();
     const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
@@ -268,7 +289,7 @@ async function importFiles(files,{folder=false}={}){
   if(slides.length){
     if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();}else state.slides.push(...slides);
     renderTray();fitScreen();
-    if(state.on){try{present(state.slides[state.index],await loadSlide(state.slides[state.index]));state.started=true;}catch(error){toast(error.message);}}
+    if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);present(slide,loaded,prepared);state.started=true;}catch(error){toast(error.message);}}
     toast(`已装入 ${slides.length} 张照片${failures.length?`\n${failures.length} 张未装入：${failures.slice(0,2).join('；')}`:''}`);
   }else toast(failures.slice(0,3).join('\n')||'没有可装入的照片');
   state.importing=false;updateUI();$('fileInput').value='';$('folderInput').value='';
