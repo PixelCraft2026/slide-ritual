@@ -2,6 +2,7 @@
 .browser-harness/
 .publish/
 node_modules/
+dist/
 qa/
 reference/
 __pycache__/

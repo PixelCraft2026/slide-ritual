@@ -21,6 +21,10 @@ The geometry, optics, and motion are real-time approximations built from referen
 
 ## Get started
 
+### Open the online version
+
+Visit [Slide Ritual](https://pixelcraft2026.github.io/slide-ritual/) and choose a photo folder, or try the bundled examples. Photographs you import are processed in your own browser. HDR output depends on your display, system settings, and browser support.
+
 ### Open the standalone version
 
 1. Download the project and open **`darkroom.html`** in your browser.
@@ -101,7 +105,7 @@ The application uses plain HTML, CSS, and JavaScript ES modules. Three.js is bun
 | `audio.js` | Slide-change and fan audio |
 | `tools/build-standalone.mjs` | Generate the offline HTML from the source and assets |
 
-The repository keeps the browser entry points and modules at the root, runtime media in `assets/`, the bundled engine and its license in `vendor/`, unit tests and fixtures in `tests/`, and historical implementation notes in `docs/`. The four scripts in `tools/` cover standalone generation, test-fixture generation, sample-photo preparation, and fan synthesis.
+The repository keeps the browser entry points and modules at the root, runtime media in `assets/`, the bundled engine and its license in `vendor/`, unit tests and fixtures in `tests/`, and historical implementation notes in `docs/`. The scripts in `tools/` cover standalone and website generation, test-fixture generation, sample-photo preparation, and fan synthesis.
 
 Run the existing unit tests:
 
@@ -116,6 +120,8 @@ After editing the source or assets, regenerate the standalone version from the p
 ```sh
 node tools/build-standalone.mjs
 ```
+
+To assemble the GitHub Pages website locally, run `npm run build:pages`. It copies the runtime assets and offline HTML into the ignored `dist/` directory. The [deployment workflow](.github/workflows/pages.yml) runs the unit tests, regenerates the offline HTML, and publishes that directory after a push to `main`; it can also be started manually from the Actions tab.
 
 Optional asset tools require Python, Pillow, and NumPy: `tools/prepare-assets.py` downloads the sample photographs and regenerates the fan sound; `tools/prepare-fan.py` regenerates only the fan sound and writes an ignored local report in `qa/`. `node tools/create-fixtures.mjs` regenerates the three synthetic failure/highlight fixtures. Viewing, the Node.js unit tests, and standalone generation require neither Python nor Browser Harness.
 

@@ -21,6 +21,10 @@
 
 ## 开始使用
 
+### 打开在线版
+
+访问 [Slide Ritual](https://pixelcraft2026.github.io/slide-ritual/)，选择照片文件夹，或先观看内置示例。导入的照片在你自己的浏览器中处理；HDR 输出取决于显示器、系统设置与浏览器支持。
+
 ### 打开离线单文件
 
 1. 下载项目，在浏览器中打开 **`darkroom.html`**。
@@ -101,7 +105,7 @@ SDR 照片也可以在 HDR 输出中获得轻微的高光扩展：默认 **2 倍
 | `audio.js` | 机械过片与风扇声音 |
 | `tools/build-standalone.mjs` | 将源码与素材生成为离线 HTML |
 
-浏览器入口与模块保留在仓库根目录，运行素材位于 `assets/`，三维引擎及其许可证位于 `vendor/`，单元测试与测试素材位于 `tests/`，历史实现说明位于 `docs/`。`tools/` 保留四个工具，分别用于生成离线版、生成测试素材、准备示例照片和合成风扇声。
+浏览器入口与模块保留在仓库根目录，运行素材位于 `assets/`，三维引擎及其许可证位于 `vendor/`，单元测试与测试素材位于 `tests/`，历史实现说明位于 `docs/`。`tools/` 中的工具用于生成离线版与网页发布包、生成测试素材、准备示例照片和合成风扇声。
 
 运行现有单元测试：
 
@@ -116,6 +120,8 @@ npm test
 ```sh
 node tools/build-standalone.mjs
 ```
+
+执行 `npm run build:pages` 可在本地生成 GitHub Pages 网站，将运行素材与离线 HTML 复制到已忽略的 `dist/` 目录。[部署工作流](.github/workflows/pages.yml)会在推送到 `main` 后运行单元测试、重新生成离线 HTML，并发布该目录；也可以从 Actions 页面手动运行。
 
 可选素材工具需要 Python、Pillow 和 NumPy：`tools/prepare-assets.py` 下载示例照片并重新生成风扇声；`tools/prepare-fan.py` 只生成风扇声，并在 `qa/` 中写入已忽略的本地报告。执行 `node tools/create-fixtures.mjs` 可重新生成三个高光与失败处理的合成测试文件。普通观片、Node.js 单元测试和离线版生成均不需要 Python 或 Browser Harness。
 
