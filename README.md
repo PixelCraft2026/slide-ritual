@@ -12,13 +12,15 @@ A browser-based photo viewer inspired by the **Leica P150** slide projector. War
 
 - A 3D projector with lamp warmup, an animated slide magazine, and recorded slide-change sound.
 - Photo-responsive wall lighting, a subtle light beam, floating dust, and adjustable focus.
-- Folder import, automatic playback, fullscreen, and controls that hide while you watch.
+- Folder import, automatic playback, fullscreen, and mobile layouts, with controls that hide while you watch.
 - HDR support, including Radiance `.hdr` / `.rgbe`, with SDR fallback.
 - Local photo processing: imported photographs stay in your browser and are never uploaded.
 
 ## Start watching
 
 Open the [online viewer](https://pixelcraft2026.github.io/slide-ritual/), choose **文件夹** (Folder), or click **先看示例** (Try the examples). The interface is currently in Simplified Chinese.
+
+Foreground blur defaults to **2.0 on touch devices** and **4.0 on desktop**. If your mobile browser does not support folder selection, open settings and choose **也可以选择单张照片** (Select individual photos).
 
 Use **← / →** to change photographs, **Space** to play or pause, **F** for fullscreen, **M** for sound, and **P** for power.
 
