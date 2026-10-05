@@ -1,5 +1,6 @@
 import { decodeRadiance, hasHDRMetadata, linearToSrgb } from './hdr.js';
 import { ProjectionRenderer, decodeImage } from './renderer.js';
+import { resampleArea } from './resample.js';
 import { ProjectorAudio } from './audio.js';
 import { ProjectorScene, WallLight } from './scene.js';
 import { AirLight } from './atmosphere.js';
@@ -245,10 +246,11 @@ async function importFiles(files,{folder=false}={}){
       if(/\.(heic|heif|raw|dng|cr2|cr3|nef|arw|exr|tiff?)$/i.test(file.name))throw new Error('请先转换为 JPG、PNG、AVIF 或 Radiance .hdr');
       if(/\.(hdr|rgbe)$/i.test(file.name)){
         const source=decodeRadiance(await file.arrayBuffer());
-        const thumb=document.createElement('canvas');thumb.width=112;thumb.height=Math.max(1,Math.round(112*source.height/source.width));
+        const thumb=document.createElement('canvas');thumb.width=Math.min(112,source.width);thumb.height=Math.max(1,Math.round(thumb.width*source.height/source.width));
         if(thumb.height>180){thumb.height=180;thumb.width=Math.max(1,Math.round(180*source.width/source.height));}
         const ctx=thumb.getContext('2d'),pixels=ctx.createImageData(thumb.width,thumb.height);
-        for(let y=0;y<thumb.height;y++)for(let x=0;x<thumb.width;x++){const i=(Math.min(source.height-1,Math.floor(y/thumb.height*source.height))*source.width+Math.min(source.width-1,Math.floor(x/thumb.width*source.width)))*4,o=(y*thumb.width+x)*4;const l=Math.max(.00001,.2126*source.data[i]+.7152*source.data[i+1]+.0722*source.data[i+2]),scale=Math.min(1,l/(1+l)*1.25)/l;for(let c=0;c<3;c++)pixels.data[o+c]=255*linearToSrgb(source.data[i+c]*scale);pixels.data[o+3]=255;}
+        const preview=resampleArea(source.data,source.width,source.height,thumb.width,thumb.height);
+        for(let i=0;i<preview.length;i+=4){const l=Math.max(.00001,.2126*preview[i]+.7152*preview[i+1]+.0722*preview[i+2]),scale=Math.min(1,l/(1+l)*1.25)/l;for(let c=0;c<3;c++)pixels.data[i+c]=255*linearToSrgb(preview[i+c]*scale);pixels.data[i+3]=255;}
         ctx.putImageData(pixels,0,0);
         slides.push({name:file.name,file,url:thumb.toDataURL(),width:source.originalWidth,height:source.originalHeight,type:'HDR',hdrCandidate:true});
       }else{

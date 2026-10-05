@@ -8,7 +8,7 @@ if (dirname(output) !== root || output === root) throw new Error('Invalid Pages 
 if (existsSync(output) && lstatSync(output).isSymbolicLink()) throw new Error('Pages output must not be a symbolic link');
 
 const files = [
-  'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js',
+  'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js', 'resample.js',
   'scene.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js',
   'darkroom.html', 'vendor/three.module.js', 'vendor/LICENSE-three',
   'assets/favicon.svg', 'assets/alpine.jpg', 'assets/woodland.jpg', 'assets/evening.jpg',

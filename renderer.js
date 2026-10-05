@@ -1,4 +1,5 @@
 import { srgbToLinear, toHalf } from './hdr.js';
+import { AreaResampler, resampleArea } from './resample.js';
 
 // All processing is linear-light. Canvas presentation uses extended sRGB transfer.
 const wgsl = `
@@ -42,19 +43,39 @@ if(source.z>.5){c=vec3(dot(c,vec3(1.22494018,-.22494018,0.)),dot(c,vec3(-.042056
 c*=effects.x;float l=max(dot(c,vec3(.2126,.7152,.0722)),.00001);if(source.x>.5)c*=min(1.,l/(1.+l)*1.25)/l;
 c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(texture(tex,uv).a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;
 
+const byteLinear=Float32Array.from({length:256},(_,v)=>srgbToLinear(v/255));
+const halfLinear=new Float32Array(65536),halfLinearReady=new Uint8Array(65536);
 export async function decodeImage(image) {
   const scale=Math.min(1,2560/Math.max(image.naturalWidth,image.naturalHeight),Math.sqrt(3_000_000/(image.naturalWidth*image.naturalHeight)));
   const width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
-  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+  const canvas=document.createElement('canvas');canvas.width=Math.min(512,image.naturalWidth);canvas.height=Math.min(512,image.naturalHeight);
   const ctx=canvas.getContext('2d',{colorSpace:'display-p3',colorType:'float16',willReadFrequently:true});
   canvas.configureHighDynamicRange?.({mode:'extended'});
-  ctx.drawImage(image,0,0,width,height);
-  let pixels;
-  try {pixels=ctx.getImageData(0,0,width,height,{colorSpace:'display-p3',pixelFormat:'rgba-float16'});} catch {pixels=ctx.getImageData(0,0,width,height);}
-  const float=pixels.data.BYTES_PER_ELEMENT===2;
-  const data=new Float32Array(width*height*4);let peak=0,peakLuminance=0;
-  for(let i=0;i<data.length;i+=4){const alpha=Number(pixels.data[i+3])/(float?1:255);for(let c=0;c<3;c++){data[i+c]=srgbToLinear(Number(pixels.data[i+c])/(float?1:255))*alpha;peak=Math.max(peak,data[i+c]);}peakLuminance=Math.max(peakLuminance,.22897456*data[i]+.69173852*data[i+1]+.07928691*data[i+2]);data[i+3]=1;}
-  return {data,width,height,colorSpace:pixels.colorSpace||ctx.getContextAttributes?.().colorSpace||'srgb',hdr:float&&peakLuminance>1.015,peak,float};
+  const filter=new AreaResampler(image.naturalWidth,image.naturalHeight,width,height),tile=new Float32Array(canvas.width*canvas.height*4);
+  let peak=0,peakLuminance=0,float=false,colorSpace='srgb',floatReadback=true,tiles=0;
+  for(let top=0;top<image.naturalHeight;top+=512)for(let left=0;left<image.naturalWidth;left+=512){
+    const tw=Math.min(512,image.naturalWidth-left),th=Math.min(512,image.naturalHeight-top);
+    // Decode 1:1 tiles; all minification is performed by our linear area filter.
+    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,left,top,tw,th,0,0,tw,th);
+    let pixels;
+    if(floatReadback){try{pixels=ctx.getImageData(0,0,tw,th,{colorSpace:'display-p3',pixelFormat:'rgba-float16'});}catch{floatReadback=false;}}
+    pixels??=ctx.getImageData(0,0,tw,th);
+    float=pixels.data.BYTES_PER_ELEMENT===2;colorSpace=pixels.colorSpace||ctx.getContextAttributes?.().colorSpace||'srgb';
+    const bits=float?new Uint16Array(pixels.data.buffer,pixels.data.byteOffset,pixels.data.length):null;
+    for(let i=0;i<tw*th*4;i+=4){
+      const alpha=Number(pixels.data[i+3])/(float?1:255);
+      for(let c=0;c<3;c++){
+        let v;
+        if(float){const code=bits[i+c];if(!halfLinearReady[code]){halfLinear[code]=srgbToLinear(Number(pixels.data[i+c]));halfLinearReady[code]=1;}v=halfLinear[code];}
+        else v=byteLinear[pixels.data[i+c]];
+        tile[i+c]=v*alpha;peak=Math.max(peak,tile[i+c]);
+      }
+      peakLuminance=Math.max(peakLuminance,.22897456*tile[i]+.69173852*tile[i+1]+.07928691*tile[i+2]);tile[i+3]=1;
+    }
+    filter.addTile(tile,left,top,tw,th);
+    if(++tiles%4===0)await new Promise(resolve=>setTimeout(resolve,0));
+  }
+  return {data:filter.data,width,height,colorSpace,hdr:float&&peakLuminance>1.015,peak,float};
 }
 
 export class ProjectionRenderer {
@@ -77,7 +98,7 @@ export class ProjectionRenderer {
         if(errors.length)throw new Error(errors.map(m=>m.message).join('\n'));
         this.pipeline=await this.device.createRenderPipelineAsync({layout:'auto',vertex:{module,entryPoint:'vs'},fragment:{module,entryPoint:'fs',targets:[{format:'rgba16float'}]},primitive:{topology:'triangle-list'}});
         this.uniform=this.device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
-        this.sampler=this.device.createSampler({magFilter:'linear',minFilter:'linear'});
+        this.sampler=this.device.createSampler({magFilter:'linear',minFilter:'linear',mipmapFilter:'linear'});
         return;
       }catch(error){
         this.device?.destroy();this.device=null;this.gpu=null;
@@ -94,25 +115,33 @@ export class ProjectionRenderer {
     gl.useProgram(this.program);const v=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
     const loc=gl.getAttribLocation(this.program,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     this.locations={effects:gl.getUniformLocation(this.program,'effects'),source:gl.getUniformLocation(this.program,'source'),size:gl.getUniformLocation(this.program,'size'),transparency:gl.getUniformLocation(this.program,'transparency')};
-    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     this.mode='webgl';this.hdr=false;
     this.canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();this.onFailure?.('显卡渲染连接已中断，请重新载入页面');});
   }
   configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu')this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.transparent?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.draw();}
   prepare(source){
     this.halfSources??=new WeakMap();
-    if(!this.halfSources.has(source)){const half=new Uint16Array(source.data.length);for(let i=0;i<half.length;i++)half[i]=toHalf(source.data[i]);this.halfSources.set(source,half);}
+    if(!this.halfSources.has(source)){
+      const levels=[];let data=source.data,width=source.width,height=source.height;
+      while(true){
+        const half=new Uint16Array(data.length);for(let i=0;i<half.length;i++)half[i]=toHalf(data[i]);levels.push({data:half,width,height});
+        if(width===1&&height===1)break;
+        const w=Math.max(1,Math.floor(width/2)),h=Math.max(1,Math.floor(height/2));data=resampleArea(data,width,height,w,h);width=w;height=h;
+      }
+      this.halfSources.set(source,levels);
+    }
     return this.halfSources.get(source);
   }
   upload(source){
     this.source=source;
-    const half=this.prepare(source);
+    const levels=this.prepare(source);
     if(this.mode==='webgpu'){
-      this.texture?.destroy();this.texture=this.device.createTexture({size:[source.width,source.height],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
-      this.device.queue.writeTexture({texture:this.texture},half,{bytesPerRow:source.width*8},[source.width,source.height]);
+      this.texture?.destroy();this.texture=this.device.createTexture({size:[source.width,source.height],mipLevelCount:levels.length,format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+      levels.forEach((level,mipLevel)=>this.device.queue.writeTexture({texture:this.texture,mipLevel},level.data,{bytesPerRow:level.width*8},[level.width,level.height]));
       this.bind=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()},{binding:1,resource:this.sampler},{binding:2,resource:{buffer:this.uniform}}]});
     }else if(this.mode==='webgl'){
-      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.texImage2D(g.TEXTURE_2D,0,g.RGBA16F,source.width,source.height,0,g.RGBA,g.HALF_FLOAT,half);
+      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAX_LEVEL,levels.length-1);levels.forEach((level,mipLevel)=>g.texImage2D(g.TEXTURE_2D,mipLevel,g.RGBA16F,level.width,level.height,0,g.RGBA,g.HALF_FLOAT,level.data));
     }
     this.draw();
   }

@@ -1,3 +1,5 @@
+import { AreaResampler } from './resample.js';
+
 // Radiance RGBE decoder. Input remains scene-linear until display mapping.
 export function decodeRadiance(buffer) {
   const bytes = new Uint8Array(buffer); let pos = 0;
@@ -52,16 +54,18 @@ export function decodeRadiance(buffer) {
   }
   const scale = Math.min(1, 2560 / Math.max(width,height), Math.sqrt(3_000_000/(width*height)));
   const w = Math.max(1, Math.floor(width*scale)), h = Math.max(1,Math.floor(height*scale));
-  const data = new Float32Array(w*h*4); let peak = 0;
-  for (let y=0;y<h;y++) for(let x=0;x<w;x++) {
-    let sx=Math.min(width-1, Math.floor(x/scale)), sy=Math.min(height-1,Math.floor(y/scale));
-    if(res[1]==='+') sy=height-1-sy; if(res[3]==='-') sx=width-1-sx;
-    const i=(sy*width+sx)*4, o=(y*w+x)*4;
-    const factor = pixels[i+3] ? 2**(pixels[i+3]-136) : 0;
-    for(let c=0;c<3;c++) { const v = pixels[i+3] ? (pixels[i+c]+.5)*factor : 0; data[o+c]=Math.min(v,65504); peak=Math.max(peak,data[o+c]); }
-    data[o+3]=1;
+  const filter=new AreaResampler(width,height,w,h),tile=new Float32Array(Math.min(256,width)*Math.min(256,height)*4);let peak=0;
+  for(let top=0;top<height;top+=256)for(let left=0;left<width;left+=256){
+    const tw=Math.min(256,width-left),th=Math.min(256,height-top);
+    for(let y=0;y<th;y++)for(let x=0;x<tw;x++){
+      const sx=res[3]==='-'?width-1-left-x:left+x,sy=res[1]==='+'?height-1-top-y:top+y;
+      const i=(sy*width+sx)*4,o=(y*tw+x)*4,factor=pixels[i+3]?2**(pixels[i+3]-136):0;
+      for(let c=0;c<3;c++){const v=pixels[i+3]?(pixels[i+c]+.5)*factor:0;tile[o+c]=Math.min(v,65504);peak=Math.max(peak,tile[o+c]);}
+      tile[o+3]=1;
+    }
+    filter.addTile(tile,left,top,tw,th);
   }
-  return { data, width:w, height:h, originalWidth:width, originalHeight:height, hdr:true, colorSpace:'srgb', peak };
+  return { data:filter.data, width:w, height:h, originalWidth:width, originalHeight:height, hdr:true, colorSpace:'srgb', peak };
 }
 
 export const srgbToLinear = v => Math.sign(v) * (Math.abs(v) <= .04045 ? Math.abs(v)/12.92 : ((Math.abs(v)+.055)/1.055)**2.4);
