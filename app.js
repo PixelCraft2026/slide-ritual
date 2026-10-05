@@ -8,6 +8,12 @@ import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, transitionAt, startupAt
 
 const $=id=>document.getElementById(id);
 const room=$('room'),screen=$('screen'),native=$('nativeImage'),audio=new ProjectorAudio();
+// Initialize once so viewport changes preserve the user's foreground blur.
+const initialDepth=matchMedia('(hover: none) and (pointer: coarse)').matches?2:4;
+$('depth').value=String(initialDepth);
+$('depth').defaultValue=String(initialDepth);
+$('depthValue').textContent=initialDepth.toFixed(1);
+room.style.setProperty('--foreground-blur',`${initialDepth}px`);
 const demos=[
   {name:'山间来信',url:'assets/alpine.jpg',width:1800,height:1200,type:'SDR',demo:true},
   {name:'林间的访客',url:'assets/woodland.jpg',width:1800,height:2971,type:'SDR',demo:true},
