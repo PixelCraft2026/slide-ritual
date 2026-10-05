@@ -1,7 +1,8 @@
-import { srgbToLinear, toHalf } from './hdr.js';
-import { AreaResampler, resampleArea } from './resample.js';
+import { toHalf } from './hdr.js';
+import { processImagePixels, prepareImageProjection, projectionPixelsSize } from './pixels.js';
 
-// All processing is linear-light. Canvas presentation uses extended sRGB transfer.
+// Projection filtering is linear-light; browser decode uses its native color
+// pipeline. Canvas presentation uses extended sRGB transfer.
 const wgsl = `
 struct Params { effects:vec4f, source:vec4f, size:vec4f }
 @group(0) @binding(0) var tex:texture_2d<f32>;
@@ -15,8 +16,10 @@ struct Out { @builtin(position) pos:vec4f, @location(0) uv:vec2f }
 fn encode(v:vec3f)->vec3f { let a=abs(v); return sign(v)*select(1.055*pow(a,vec3f(1./2.4))-.055,a*12.92,a<=vec3f(.0031308)); }
 @fragment fn fs(o:Out)->@location(0) vec4f {
   let uv=o.uv;let d=p.effects.y/p.size.xy;
-  var c=textureSample(tex,sam,uv).rgb*.4;
-  c+=(textureSample(tex,sam,uv+vec2f(d.x,0.)).rgb+textureSample(tex,sam,uv-vec2f(d.x,0.)).rgb+textureSample(tex,sam,uv+vec2f(0.,d.y)).rgb+textureSample(tex,sam,uv-vec2f(0.,d.y)).rgb)*.15;
+  // Explicit gradients keep sampling valid inside uniform effect branches.
+  let dx=dpdx(uv);let dy=dpdy(uv);
+  var c=textureSampleGrad(tex,sam,uv,dx,dy).rgb;
+  if(p.effects.y>0.){c=c*.4+(textureSampleGrad(tex,sam,uv+vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv+vec2f(0.,d.y),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(0.,d.y),dx,dy).rgb)*.15;}
   if(p.effects.w>0.) { var moving=vec3f(0.);for(var i=-4;i<=4;i++){moving+=textureSample(tex,sam,uv+vec2f(f32(i)*p.effects.w/p.size.x,0.)).rgb/9.;}c=mix(c,moving,.85); }
   if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
   c*=p.effects.x;
@@ -37,45 +40,25 @@ in vec2 pos;out vec2 uv;void main(){uv=pos*.5+.5;gl_Position=vec4(pos.x,-pos.y,0
 const fragmentGL=`#version 300 es
 precision highp float;uniform sampler2D tex;uniform vec4 effects;uniform vec4 source;uniform vec2 size;uniform vec2 transparency;in vec2 uv;out vec4 outputColor;
 vec3 encode(vec3 v){vec3 a=abs(v);return sign(v)*mix(1.055*pow(a,vec3(1./2.4))-.055,a*12.92,lessThanEqual(a,vec3(.0031308)));}
-void main(){vec2 d=effects.y/size;vec3 c=texture(tex,uv).rgb*.4;c+=(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
+void main(){vec2 d=effects.y/size;vec3 c=texture(tex,uv).rgb;if(effects.y>0.)c=c*.4+(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
 if(effects.w>0.){vec3 moving=vec3(0.);for(int i=-4;i<=4;i++){moving+=texture(tex,uv+vec2(float(i)*effects.w/size.x,0.)).rgb/9.;}c=mix(c,moving,.85);}
 if(source.z>.5){c=vec3(dot(c,vec3(1.22494018,-.22494018,0.)),dot(c,vec3(-.04205695,1.04205695,0.)),dot(c,vec3(-.01963755,-.07863605,1.09827360)));}
 c*=effects.x;float l=max(dot(c,vec3(.2126,.7152,.0722)),.00001);if(source.x>.5)c*=min(1.,l/(1.+l)*1.25)/l;
 c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(texture(tex,uv).a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;
 
-const byteLinear=Float32Array.from({length:256},(_,v)=>srgbToLinear(v/255));
-const halfLinear=new Float32Array(65536),halfLinearReady=new Uint8Array(65536);
-export async function decodeImage(image) {
+export async function decodeImage(image,viewport) {
   const scale=Math.min(1,2560/Math.max(image.naturalWidth,image.naturalHeight),Math.sqrt(3_000_000/(image.naturalWidth*image.naturalHeight)));
   const width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
-  const canvas=document.createElement('canvas');canvas.width=Math.min(512,image.naturalWidth);canvas.height=Math.min(512,image.naturalHeight);
+  const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
   const ctx=canvas.getContext('2d',{colorSpace:'display-p3',colorType:'float16',willReadFrequently:true});
   canvas.configureHighDynamicRange?.({mode:'extended'});
-  const filter=new AreaResampler(image.naturalWidth,image.naturalHeight,width,height),tile=new Float32Array(canvas.width*canvas.height*4);
-  let peak=0,peakLuminance=0,float=false,colorSpace='srgb',floatReadback=true,tiles=0;
-  for(let top=0;top<image.naturalHeight;top+=512)for(let left=0;left<image.naturalWidth;left+=512){
-    const tw=Math.min(512,image.naturalWidth-left),th=Math.min(512,image.naturalHeight-top);
-    // Decode 1:1 tiles; all minification is performed by our linear area filter.
-    ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,left,top,tw,th,0,0,tw,th);
-    let pixels;
-    if(floatReadback){try{pixels=ctx.getImageData(0,0,tw,th,{colorSpace:'display-p3',pixelFormat:'rgba-float16'});}catch{floatReadback=false;}}
-    pixels??=ctx.getImageData(0,0,tw,th);
-    float=pixels.data.BYTES_PER_ELEMENT===2;colorSpace=pixels.colorSpace||ctx.getContextAttributes?.().colorSpace||'srgb';
-    const bits=float?new Uint16Array(pixels.data.buffer,pixels.data.byteOffset,pixels.data.length):null;
-    for(let i=0;i<tw*th*4;i+=4){
-      const alpha=Number(pixels.data[i+3])/(float?1:255);
-      for(let c=0;c<3;c++){
-        let v;
-        if(float){const code=bits[i+c];if(!halfLinearReady[code]){halfLinear[code]=srgbToLinear(Number(pixels.data[i+c]));halfLinearReady[code]=1;}v=halfLinear[code];}
-        else v=byteLinear[pixels.data[i+c]];
-        tile[i+c]=v*alpha;peak=Math.max(peak,tile[i+c]);
-      }
-      peakLuminance=Math.max(peakLuminance,.22897456*tile[i]+.69173852*tile[i+1]+.07928691*tile[i+2]);tile[i+3]=1;
-    }
-    filter.addTile(tile,left,top,tw,th);
-    if(++tiles%4===0)await new Promise(resolve=>setTimeout(resolve,0));
-  }
-  return {data:filter.data,width,height,colorSpace,hdr:float&&peakLuminance>1.015,peak,float};
+  // Browser coarse reduction avoids reading every native pixel of a large photo.
+  // "high" is a quality hint, not a promise of a particular browser kernel.
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(image,0,0,width,height);
+  let pixels;try{pixels=ctx.getImageData(0,0,width,height,{colorSpace:'display-p3',pixelFormat:'rgba-float16'});}catch{pixels=ctx.getImageData(0,0,width,height);}
+  const colorSpace=pixels.colorSpace||ctx.getContextAttributes?.().colorSpace||'srgb';
+  canvas.width=canvas.height=1;
+  return processImagePixels(pixels.data,width,height,colorSpace,viewport);
 }
 
 export class ProjectionRenderer {
@@ -98,7 +81,7 @@ export class ProjectionRenderer {
         if(errors.length)throw new Error(errors.map(m=>m.message).join('\n'));
         this.pipeline=await this.device.createRenderPipelineAsync({layout:'auto',vertex:{module,entryPoint:'vs'},fragment:{module,entryPoint:'fs',targets:[{format:'rgba16float'}]},primitive:{topology:'triangle-list'}});
         this.uniform=this.device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
-        this.sampler=this.device.createSampler({magFilter:'linear',minFilter:'linear',mipmapFilter:'linear'});
+        this.sampler=this.device.createSampler({magFilter:'linear',minFilter:'linear'});
         return;
       }catch(error){
         this.device?.destroy();this.device=null;this.gpu=null;
@@ -115,37 +98,67 @@ export class ProjectionRenderer {
     gl.useProgram(this.program);const v=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
     const loc=gl.getAttribLocation(this.program,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
     this.locations={effects:gl.getUniformLocation(this.program,'effects'),source:gl.getUniformLocation(this.program,'source'),size:gl.getUniformLocation(this.program,'size'),transparency:gl.getUniformLocation(this.program,'transparency')};
-    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    this.tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,this.tex);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
     this.mode='webgl';this.hdr=false;
     this.canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();this.onFailure?.('显卡渲染连接已中断，请重新载入页面');});
   }
   configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu')this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.transparent?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.draw();}
-  prepare(source){
+  prepare(source,viewport={width:this.canvas.width,height:this.canvas.height}){
     this.halfSources??=new WeakMap();
-    if(!this.halfSources.has(source)){
-      const levels=[];let data=source.data,width=source.width,height=source.height;
-      while(true){
-        const half=new Uint16Array(data.length);for(let i=0;i<half.length;i++)half[i]=toHalf(data[i]);levels.push({data:half,width,height});
-        if(width===1&&height===1)break;
-        const w=Math.max(1,Math.floor(width/2)),h=Math.max(1,Math.floor(height/2));data=resampleArea(data,width,height,w,h);width=w;height=h;
+    if(!this.halfSources.has(source))this.halfSources.set(source,new Map());
+    const cache=this.halfSources.get(source),size=this.transparent?source:projectionPixelsSize(source,viewport),key=`${size.width}x${size.height}`;
+    if(!cache.has(key)){
+      if(this.transparent||source.width===1&&source.height===1){
+        // The already blurred machine glow is magnified; it needs no resampling.
+        const half=new Uint16Array(source.data.length);for(let i=0;i<half.length;i++)half[i]=toHalf(source.data[i]);cache.set(key,{data:half,width:source.width,height:source.height});
+      }else if(source.preparedProjection?.width===size.width&&source.preparedProjection?.height===size.height){cache.set(key,source.preparedProjection);delete source.preparedProjection;}
+      else{
+        const pending=prepareImageProjection(source,viewport).then(projection=>{cache.set(key,projection);this.trimPrepared(cache,key);return projection;},error=>{cache.delete(key);throw error;});cache.set(key,pending);
       }
-      this.halfSources.set(source,levels);
     }
-    return this.halfSources.get(source);
+    return cache.get(key);
   }
-  upload(source){
-    this.source=source;
-    const levels=this.prepare(source);
+  trimPrepared(cache,keep){for(const key of cache.keys())if(cache.size>2&&key!==keep&&!(cache.get(key) instanceof Promise))cache.delete(key);}
+  prepared(source,viewport=this.canvas){
+    const cache=this.halfSources?.get(source);if(!cache)return null;
+    const size=this.transparent?source:projectionPixelsSize(source,viewport),exact=cache.get(`${size.width}x${size.height}`);
+    if(exact&&!(exact instanceof Promise))return exact;
+    return [...cache.values()].find(value=>!(value instanceof Promise))||null;
+  }
+  upload(source,viewport=this.canvas){
+    let projection=this.prepared(source,viewport);
+    if(!projection){const ready=this.prepare(source,viewport);if(ready instanceof Promise)throw new Error('Prepare the photograph before uploading');projection=ready;}
+    this.source=source;this.uploadProjection(projection);
+  }
+  uploadProjection(projection){
+    const {data,width,height}=projection;
     if(this.mode==='webgpu'){
-      this.texture?.destroy();this.texture=this.device.createTexture({size:[source.width,source.height],mipLevelCount:levels.length,format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
-      levels.forEach((level,mipLevel)=>this.device.queue.writeTexture({texture:this.texture,mipLevel},level.data,{bytesPerRow:level.width*8},[level.width,level.height]));
+      this.texture?.destroy();this.texture=this.device.createTexture({size:[width,height],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
+      this.device.queue.writeTexture({texture:this.texture},data,{bytesPerRow:width*8},[width,height]);
       this.bind=this.device.createBindGroup({layout:this.pipeline.getBindGroupLayout(0),entries:[{binding:0,resource:this.texture.createView()},{binding:1,resource:this.sampler},{binding:2,resource:{buffer:this.uniform}}]});
     }else if(this.mode==='webgl'){
-      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAX_LEVEL,levels.length-1);levels.forEach((level,mipLevel)=>g.texImage2D(g.TEXTURE_2D,mipLevel,g.RGBA16F,level.width,level.height,0,g.RGBA,g.HALF_FLOAT,level.data));
+      const g=this.gl;g.bindTexture(g.TEXTURE_2D,this.tex);g.texParameteri(g.TEXTURE_2D,g.TEXTURE_MAX_LEVEL,0);g.texImage2D(g.TEXTURE_2D,0,g.RGBA16F,width,height,0,g.RGBA,g.HALF_FLOAT,data);
     }
-    this.draw();
+    this.uploadedProjection=projection;this.draw();
   }
-  resize(width,height){const dpr=Math.min(devicePixelRatio||1,2);this.canvas.width=Math.max(1,Math.round(width*dpr));this.canvas.height=Math.max(1,Math.round(height*dpr));this.draw();}
+  refreshProjection(){
+    if(this.transparent||!this.source||this.mode==='native'||this.canvas.hidden)return;
+    this.requestedProjection={source:this.source,width:this.canvas.width,height:this.canvas.height};
+    if(this.preparingProjection)return;
+    this.preparingProjection=true;
+    const refresh=async()=>{
+      try{
+        while(this.requestedProjection){
+          const request=this.requestedProjection;this.requestedProjection=null;
+          const projection=await this.prepare(request.source,request);
+          if(!this.canvas.hidden&&request.source===this.source&&request.width===this.canvas.width&&request.height===this.canvas.height&&projection!==this.uploadedProjection)this.uploadProjection(projection);
+        }
+      }catch(error){this.onFailure?.(error.message);}
+      finally{this.preparingProjection=false;}
+    };
+    refresh();
+  }
+  resize(width,height){const dpr=Math.min(devicePixelRatio||1,2),w=Math.max(1,Math.round(width*dpr)),h=Math.max(1,Math.round(height*dpr));if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;this.draw();this.refreshProjection();}
   draw(){
     if(!this.source||!this.mode||this.mode==='native')return;
     const p=this.params,s=this.source;

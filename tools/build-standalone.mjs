@@ -3,7 +3,7 @@ const data=(file,mime)=>`data:${mime};base64,${readFileSync(file).toString('base
 let html=readFileSync('index.html','utf8');
 html=html.replace('<link rel="stylesheet" href="style.css">',`<style>${readFileSync('style.css','utf8')}</style>`);
 html=html.replace('href="assets/favicon.svg"',`href="${data('assets/favicon.svg','image/svg+xml')}"`).replace('href="./"','href="#"');
-let js=['resample.js','hdr.js','renderer.js','audio.js','transition.js','scene.js','atmosphere.js','machine-light.js','app.js'].map(file=>readFileSync(file,'utf8').replace(/^import .*?;\s*$/gm,'').replace(/^export /gm,'')).join('\n\n');
+let js=['resample.js','hdr.js','pixels.js','renderer.js','audio.js','transition.js','scene.js','atmosphere.js','machine-light.js','app.js'].map(file=>readFileSync(file,'utf8').replace(/^import .*?;\s*$/gm,'').replace(/^export /gm,'')).join('\n\n');
 for(const name of ['alpine','woodland','evening'])js=js.replaceAll(`assets/${name}.jpg`,data(`assets/${name}.jpg`,'image/jpeg'));
 const sounds={advance:data('assets/advance.wav','audio/wav'),fan:data('assets/fan.wav','audio/wav')};
 js=`import * as THREE from '${data('vendor/three.module.js','text/javascript')}';\nconst EMBEDDED_AUDIO=${JSON.stringify(sounds)};\n${js}`.replace('fetch(`assets/${name}.wav`)','fetch(EMBEDDED_AUDIO[name])');

@@ -1,5 +1,6 @@
-import { decodeRadiance, hasHDRMetadata, linearToSrgb } from './hdr.js';
+import { hasHDRMetadata, linearToSrgb } from './hdr.js';
 import { ProjectionRenderer, decodeImage } from './renderer.js';
+import { processRadiancePixels } from './pixels.js';
 import { resampleArea } from './resample.js';
 import { ProjectorAudio } from './audio.js';
 import { ProjectorScene, WallLight } from './scene.js';
@@ -101,19 +102,22 @@ function fitScreen(){
   machineLight.resize(room.clientWidth,room.clientHeight,scene,Number($('depth').value));
 }
 function loadImage(url){return new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('浏览器无法解码这张照片，请转换为 JPG、PNG、AVIF 或 .hdr'));image.src=url;});}
+function preparationViewport(slide){
+  const stage=document.querySelector('.projection-stage'),{width,height}=projectionLayout(stage.clientWidth,stage.clientHeight,slide.width/slide.height,Number($('zoom').value)),dpr=Math.min(devicePixelRatio||1,2);
+  return{width:Math.max(1,Math.round(width*dpr)),height:Math.max(1,Math.round(height*dpr))};
+}
 async function loadSlide(slide){
-  if(cache.has(slide))return cache.get(slide);
-  let result;
-  if(slide.file&&/\.(hdr|rgbe)$/i.test(slide.name))result={source:decodeRadiance(await slide.file.arrayBuffer())};
+  let result;const viewport=renderer.mode==='native'?undefined:preparationViewport(slide);
+  if(cache.has(slide)){const loaded=cache.get(slide);if(!loaded.native&&viewport)await renderer.prepare(loaded.source,viewport);return loaded;}
+  if(slide.file&&/\.(hdr|rgbe)$/i.test(slide.name))result={source:await processRadiancePixels(await slide.file.arrayBuffer(),viewport)};
   else{
-    const image=await loadImage(slide.url);const source=await decodeImage(image);
+    const image=await loadImage(slide.url);const source=await decodeImage(image,viewport);
     if(source.hdr){slide.type='HDR';slide.hdrCandidate=true;}
     // Preserve the native gain map if float readback flattened it. Never manufacture its lost highlights.
     result={source,image,native:renderer.mode==='native'||(slide.hdrCandidate&&!source.hdr)};
   }
-  // Do the linear-float conversion before the mechanical cycle starts; otherwise
-  // a large image can stall the short align / engage stage during blackout.
-  if(!result.native&&renderer.mode!=='native')renderer.prepare(result.source);
+  // Finish background filtering before the mechanical cycle starts.
+  if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
   cache.set(slide,result);while(cache.size>2)cache.delete(cache.keys().next().value);return result;
 }
 function setSpill(source){
@@ -126,7 +130,7 @@ function present(slide,loaded){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);native.hidden=!state.native;renderer.canvas.hidden=state.native;
   if(state.native){native.src=slide.url;native.alt=slide.name;}
-  else {native.removeAttribute('src');renderer.upload(loaded.source);}
+  else {native.removeAttribute('src');renderer.upload(loaded.source,preparationViewport(slide));}
   if(renderer.mode==='native'&&!state.native&&loaded.source){
     // Last-resort SDR display for Radiance when neither graphics API is available.
     const src=loaded.source,canvas=document.createElement('canvas');canvas.width=src.width;canvas.height=src.height;const ctx=canvas.getContext('2d');const pixels=ctx.createImageData(src.width,src.height);
@@ -245,7 +249,7 @@ async function importFiles(files,{folder=false}={}){
       if(file.size>64*1024*1024)throw new Error('超过单张 64 MB 上限');
       if(/\.(heic|heif|raw|dng|cr2|cr3|nef|arw|exr|tiff?)$/i.test(file.name))throw new Error('请先转换为 JPG、PNG、AVIF 或 Radiance .hdr');
       if(/\.(hdr|rgbe)$/i.test(file.name)){
-        const source=decodeRadiance(await file.arrayBuffer());
+        const source=await processRadiancePixels(await file.arrayBuffer());
         const thumb=document.createElement('canvas');thumb.width=Math.min(112,source.width);thumb.height=Math.max(1,Math.round(thumb.width*source.height/source.width));
         if(thumb.height>180){thumb.height=180;thumb.width=Math.max(1,Math.round(180*source.width/source.height));}
         const ctx=thumb.getContext('2d'),pixels=ctx.createImageData(thumb.width,thumb.height);
