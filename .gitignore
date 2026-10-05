@@ -1,0 +1,11 @@
+.tools/
+.browser-harness/
+.publish/
+node_modules/
+qa/
+reference/
+__pycache__/
+*.pyc
+*.log
+.env
+.env.*

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080706"><title>暗室 · 幻灯放映</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"></head>
+<body><main id="room" class="room off interacting">
+  <canvas id="wallLight" aria-hidden="true"></canvas><div class="wall-grain" aria-hidden="true"></div>
+  <canvas id="airLight" aria-hidden="true"></canvas>
+  <section class="projection-stage" aria-label="墙上的投影">
+    <div id="screenGlow" class="screen-glow" aria-hidden="true"></div>
+    <div id="apertureWindow" class="aperture-window"><div id="screen" class="screen"><div id="opticalGate" class="optical-gate"><div id="filmMotion" class="film-motion"><canvas id="projection" aria-label="当前照片的实时投影"></canvas><img id="nativeImage" alt="" hidden></div><div class="surface-texture" aria-hidden="true"></div></div></div></div>
+    <div id="lampAperture" class="lamp-aperture" aria-hidden="true"><div class="empty-gate"></div></div>
+  </section>
+  <canvas id="projector" class="projector" role="img" aria-label="从后方观看的 Leica P150 幻灯机，前景虚焦，右侧为机械片匣"></canvas>
+  <canvas id="machineGlow" aria-hidden="true"></canvas>
+  <div class="lens-haze" aria-hidden="true"></div><div class="room-vignette" aria-hidden="true"></div>
+  <div id="controls" class="controls" aria-label="放映控制">
+    <nav class="control-rail" aria-label="悬浮控制栏">
+      <button id="importBtn" class="tool folder-button" aria-label="选择照片文件夹" title="选择文件夹 · 自动放映"><svg viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v12H3ZM3 6V4h7l2 2M12 11v6m-3-3h6"/></svg><span>文件夹</span></button><div class="rail-rule"></div>
+      <button id="prevBtn" class="tool" aria-label="上一张照片" title="上一张 · ←"><svg viewBox="0 0 24 24"><path d="m15 6-7 6 7 6"/></svg></button>
+      <button id="playBtn" class="tool" aria-label="自动放映" aria-pressed="false" title="播放 / 暂停 · 空格"><svg viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></svg></button>
+      <button id="nextBtn" class="tool" aria-label="下一张照片" title="下一张 · →"><svg viewBox="0 0 24 24"><path d="m9 6 7 6-7 6"/></svg></button>
+      <span class="counter"><b id="currentCount">01</b><span>/</span><span id="totalCount">03</span></span><div class="rail-rule"></div>
+      <button id="soundBtn" class="tool" aria-label="关闭机械声音" aria-pressed="true" title="声音 · M"><svg viewBox="0 0 24 24"><path d="M4 9h4l6-5v16l-6-5H4Zm13-1c3 2 3 6 0 8m3-11c5 4 5 10 0 14"/></svg></button>
+      <button id="immersiveBtn" class="tool" aria-label="进入全屏" aria-pressed="false" title="全屏 · F"><svg viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></svg></button>
+      <button id="settingsBtn" class="tool" aria-label="放映设置" aria-expanded="false" title="设置"><svg viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16M2 9h6m1 7h6m1-9h6"/></svg></button>
+      <button id="powerBtn" class="tool" aria-label="开启幻灯机" aria-pressed="false" title="电源 · P"><svg viewBox="0 0 24 24"><path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/></svg></button>
+    </nav>
+    <div id="intro" class="start-card"><span class="small-label">暗室 / 35 mm</span><p>选一个文件夹，<br>让照片慢慢放映。</p><button id="startBtn" class="text-button">先看示例 <span>→</span></button><small>移动鼠标，唤回控制</small></div>
+    <aside id="settings" class="settings" hidden aria-label="放映设置">
+      <div class="settings-heading"><h1>放映设置</h1><button id="closeSettings" class="tool" aria-label="关闭设置">×</button></div>
+      <div class="current-photo"><span id="photoName">山间来信</span><small id="photoMeta">示例照片 · SDR</small></div>
+      <label class="setting"><span>画面大小 <output id="zoomValue">100%</output></span><input id="zoom" type="range" min="0.7" max="1.5" step="0.01" value="1"></label>
+      <label class="setting"><span>灯光亮度 <output id="brightnessValue">100%</output></span><input id="brightness" type="range" min="0.4" max="1.6" step="0.01" value="1"></label>
+      <label class="setting"><span>镜头对焦 <output id="focusValue">清晰</output></span><input id="focus" type="range" min="0" max="3" step="0.05" value="0"></label>
+      <label class="setting"><span>前景虚焦 <output id="depthValue">4.0</output></span><input id="depth" type="range" min="1" max="9" step="0.1" value="4"></label>
+      <details id="lightingSettings" class="position-settings"><summary>光照设置</summary>
+      <label class="setting"><span>墙面散射 <output id="diffusionValue">100%</output></span><input id="diffusion" type="range" min="0" max="1.8" step="0.01" value="1"></label>
+      <label class="setting"><span>空气散射 <output id="airAmountValue">140%</output></span><input id="airAmount" aria-label="空气散射" type="range" min="0" max="5" step="0.05" value="1.4"></label>
+      <label class="setting"><span>泛光强度 <output id="bloomValue">30%</output></span><input id="bloom" aria-label="泛光强度" type="range" min="0" max="1" step="0.05" value="0.3"></label>
+      <label class="setting"><span>顶盖反射 <output id="topReflectanceValue">70%</output></span><input id="topReflectance" aria-label="顶盖反射" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+      <label class="setting"><span>机箱光源 <output id="machineLightsValue">100%</output></span><input id="machineLights" aria-label="机箱光源" type="range" min="0" max="3" step="0.05" value="1"></label>
+      </details>
+      <details id="projectorPositionSettings" class="position-settings"><summary>幻灯机位置</summary>
+        <label class="setting"><span>垂直位置 <output id="projectorYValue">下 5%</output></span><input id="projectorY" aria-label="幻灯机垂直位置" type="range" min="-15" max="20" step="1" value="-5"></label>
+        <label class="setting"><span>俯仰角度 <output id="projectorPitchValue">0°</output></span><input id="projectorPitch" aria-label="幻灯机俯仰角度" type="range" min="-12" max="12" step="0.5" value="0"></label>
+        <button id="resetProjectorPosition" class="text-button" type="button">位置复位</button>
+      </details>
+      <details id="photoPositionSettings" class="position-settings"><summary>幻灯片位置</summary>
+        <label class="setting"><span>垂直位置 <output id="photoYValue">下 3%</output></span><input id="photoY" aria-label="幻灯片垂直位置" type="range" min="-15" max="15" step="1" value="-3"></label>
+        <button id="resetPhotoPosition" class="text-button" type="button">幻灯片位置复位</button>
+      </details>
+      <label class="setting"><span>投影质感 <output id="textureValue">轻微</output></span><input id="texture" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+      <label class="setting"><span>机械声音 <output id="volumeValue">55%</output></span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+      <label class="setting"><span>风扇底噪 <output id="fanVolumeValue">18%</output></span><input id="fanVolume" aria-label="风扇底噪" type="range" min="0" max="1" step="0.01" value="0.18"></label>
+      <label class="setting"><span>每张停留 <output id="intervalValue">4 秒</output></span><input id="interval" aria-label="每张停留" type="range" min="2" max="30" step="0.5" value="4"></label>
+      <label class="setting select-setting"><span>显示模式</span><select id="displayMode"><option value="auto">自动 · 优先 HDR</option><option value="sdr">SDR</option></select></label>
+      <label class="setting" id="highlightSetting"><span>SDR 高光扩展 <output id="highlightValue">2.0×</output></span><input id="highlight" type="range" min="1" max="4" step="0.1" value="2"></label>
+      <label class="check-setting"><input id="loop" type="checkbox" checked><span>循环放映</span></label>
+      <div class="display-info"><button id="rangeBadge" class="range-badge"><i></i><span>检测显示环境</span></button><small id="displayInfo"></small></div>
+      <div class="tray-heading"><span id="trayLabel">3 张照片</span><button id="clearBtn" class="text-button" hidden>清空</button></div><div id="filmstrip" class="filmstrip" aria-label="片匣中的照片"></div>
+      <button id="filesBtn" class="secondary-button">也可以选择单张照片</button>
+      <small class="help">← → 过片 · 空格 播放 / 暂停<br>F 全屏 · M 声音 · P 电源<br>照片只在本机处理。文件夹按文件名顺序放映，包含子文件夹。</small><span id="machineState" class="sr-only" aria-live="polite">待机</span>
+    </aside>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+  <div id="dropOverlay" class="drop-overlay" hidden>松开，装入照片</div>
+  <input id="folderInput" type="file" webkitdirectory directory multiple hidden><input id="fileInput" type="file" multiple accept="image/*,.hdr,.rgbe" hidden>
+</main><script type="module" src="app.js"></script></body></html>
