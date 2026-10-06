@@ -23,9 +23,9 @@ $('depth').defaultValue=String(initialDepth);
 $('depthValue').textContent=initialDepth.toFixed(1);
 room.style.setProperty('--foreground-blur',`${initialDepth}px`);
 const demos=[
-  {name:'山间来信',url:'assets/alpine.jpg',width:1800,height:1200,type:'SDR',demo:true},
-  {name:'林间的访客',url:'assets/woodland.jpg',width:1800,height:2971,type:'SDR',demo:true},
-  {name:'日落以前',url:'assets/evening.jpg',width:1800,height:1200,type:'SDR',demo:true},
+  {name:'冰湖',url:'assets/ice lake.jpg',width:1600,height:900,type:'SDR',demo:true},
+  {name:'鱼灯',url:'assets/fish lantern.jpg',width:1000,height:1500,type:'SDR',demo:true},
+  {name:'天文台',url:'assets/observatory.jpg',width:1000,height:1500,type:'SDR',demo:true},
 ];
 const state={slides:demos.slice(),index:0,on:false,auto:false,busy:false,importing:false,demo:true,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:false,ready:false,aperture:false};
 const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/></svg>';
@@ -77,7 +77,7 @@ function updateUI(){
   $('filesBtn').disabled=!state.ready||state.importing;
   for(const id of ['prevBtn','nextBtn','playBtn'])$(id).disabled=!state.ready||state.busy||state.importing||!state.slides.length;
   $('intro').hidden=state.on||!$('settings').hidden;
-  $('trayLabel').textContent=state.demo?t('/ 三张风景'):t('/ {count} 张照片',{count:state.slides.length});
+  $('trayLabel').textContent=state.demo?t('/ 三张示例'):t('/ {count} 张照片',{count:state.slides.length});
   $('clearBtn').hidden=state.demo||!state.slides.length;
   for(const el of $('filmstrip').querySelectorAll('.slide'))el.setAttribute('aria-current',String(Number(el.dataset.index)===state.index));
   updateMeta();

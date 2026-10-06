@@ -6,7 +6,7 @@ A browser-based photo viewer inspired by the **Leica P150** slide projector. War
 
 **[Open Slide Ritual →](https://pixelcraft2026.github.io/slide-ritual/)**
 
-![Slide Ritual: a photograph projected in a dark room with a virtual slide projector](preview.JPG)
+![Slide Ritual: Ice Lake projected on the wall above the virtual slide projector](preview.JPG)
 
 ## Features
 
@@ -20,6 +20,8 @@ A browser-based photo viewer inspired by the **Leica P150** slide projector. War
 ## Start watching
 
 Open the [online viewer](https://pixelcraft2026.github.io/slide-ritual/), choose **Folder**, or click **Try the demo**. English and Simplified Chinese follow your system language; you can switch languages in settings.
+
+The demo opens with **Ice Lake**, followed by **Fish Lanterns** and **Observatory**.
 
 Foreground blur defaults to **2.0 on touch devices** and **4.0 on desktop**. If your mobile browser does not support folder selection, open settings and choose **Or choose individual photos**.
 
@@ -47,4 +49,4 @@ See the [implementation notes (Chinese)](docs/IMPLEMENTATION_NOTES.zh-CN.md) for
 
 ## License
 
-Original code and documentation are licensed under [MIT](LICENSE). Third-party dependencies and media retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).
+Original code and documentation are licensed under [MIT](LICENSE). Dependencies and bundled photographs and audio retain their own terms; see [third-party notices](THIRD_PARTY_NOTICES.md).

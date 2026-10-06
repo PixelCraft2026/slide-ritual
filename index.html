@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080706"><title>虚拟放映室</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"><link rel="preload" as="image" href="assets/alpine.jpg" fetchpriority="high"><link rel="modulepreload" href="app.js"><link rel="modulepreload" href="vendor/three.module.js"><link rel="modulepreload" href="renderer.js"><link rel="modulepreload" href="hdr.js"><link rel="modulepreload" href="pixels.js"><link rel="modulepreload" href="resample.js"><link rel="modulepreload" href="audio.js"><link rel="modulepreload" href="scene.js"><link rel="modulepreload" href="atmosphere.js"><link rel="modulepreload" href="machine-light.js"><link rel="modulepreload" href="native-projection.js"><link rel="modulepreload" href="gain-map.js"><link rel="modulepreload" href="i18n.js"><link rel="modulepreload" href="transition.js"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080706"><title>虚拟放映室</title><link rel="icon" href="assets/favicon.svg" type="image/svg+xml"><link rel="stylesheet" href="style.css"><link rel="preload" as="image" href="assets/ice lake.jpg" fetchpriority="high"><link rel="modulepreload" href="app.js"><link rel="modulepreload" href="vendor/three.module.js"><link rel="modulepreload" href="renderer.js"><link rel="modulepreload" href="hdr.js"><link rel="modulepreload" href="pixels.js"><link rel="modulepreload" href="resample.js"><link rel="modulepreload" href="audio.js"><link rel="modulepreload" href="scene.js"><link rel="modulepreload" href="atmosphere.js"><link rel="modulepreload" href="machine-light.js"><link rel="modulepreload" href="native-projection.js"><link rel="modulepreload" href="gain-map.js"><link rel="modulepreload" href="i18n.js"><link rel="modulepreload" href="transition.js"></head>
 <body><main id="room" class="room off interacting">
   <canvas id="wallLight" aria-hidden="true"></canvas><div class="wall-grain" aria-hidden="true"></div>
   <canvas id="airLight" aria-hidden="true"></canvas>
@@ -23,10 +23,10 @@
       <button id="settingsBtn" class="tool" aria-label="放映设置" aria-expanded="false" title="设置"><svg viewBox="0 0 24 24"><path d="M5 4v16M12 4v16M19 4v16M2 9h6m1 7h6m1-9h6"/></svg></button>
       <button id="powerBtn" class="tool" aria-label="开启幻灯机" aria-pressed="false" title="电源 · P"><svg viewBox="0 0 24 24"><path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/></svg></button>
     </nav>
-    <div id="intro" class="start-card"><span class="small-label">暗室 / 35 mm</span><p>选一个文件夹，<br>让照片慢慢放映。</p><button id="startBtn" class="text-button">先看示例 <span>→</span></button><small>移动鼠标，唤回控制</small></div>
+    <div id="intro" class="start-card"><p>选一个文件夹，<br>让照片慢慢放映。</p><button id="startBtn" class="text-button">先看示例 <span>→</span></button><small>移动鼠标，唤回控制</small></div>
     <aside id="settings" class="settings" hidden aria-label="放映设置">
       <div class="settings-heading"><h1>放映设置</h1><button id="closeSettings" class="tool" aria-label="关闭设置">×</button></div>
-      <div class="current-photo"><span id="photoName">山间来信</span><small id="photoMeta">示例照片 · SDR</small></div>
+      <div class="current-photo"><span id="photoName">冰湖</span><small id="photoMeta">示例照片 · SDR</small></div>
       <div class="photo-library">
         <div class="tray-heading"><span id="trayLabel">3 张照片</span><button id="clearBtn" class="text-button" hidden>清空</button></div>
         <div id="filmstrip" class="filmstrip" aria-label="片匣中的照片"></div>

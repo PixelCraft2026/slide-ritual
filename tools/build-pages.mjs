@@ -11,7 +11,7 @@ const files = [
   'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js', 'resample.js', 'pixels.js',
   'scene.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js', 'native-projection.js', 'gain-map.js', 'i18n.js',
   'darkroom.html', 'vendor/three.module.js', 'vendor/LICENSE-three',
-  'assets/favicon.svg', 'assets/alpine.jpg', 'assets/woodland.jpg', 'assets/evening.jpg',
+  'assets/favicon.svg', 'assets/ice lake.jpg', 'assets/fish lantern.jpg', 'assets/observatory.jpg',
   'assets/advance.mp3', 'assets/advance-startup.mp3', 'assets/fan.mp3',
 ];
 

@@ -1,4 +1,4 @@
-# Slide Ritual · 暗室
+# Slide Ritual · 虚拟放映室
 
 [English](README.md) · **简体中文**
 
@@ -6,7 +6,7 @@
 
 **[进入在线观片室 →](https://pixelcraft2026.github.io/slide-ritual/)**
 
-![Slide Ritual 使用界面：照片投映在暗室墙上，前景为虚拟幻灯机](preview.JPG)
+![Slide Ritual 使用界面：冰湖照片投映在墙上，前景为虚拟幻灯机](preview.JPG)
 
 ## 主要功能
 
@@ -20,6 +20,8 @@
 ## 开始观看
 
 打开[在线版](https://pixelcraft2026.github.io/slide-ritual/)，点击 **文件夹** 导入照片，或点击 **先看示例**。支持简体中文与英文，默认跟随系统语言，也可在设置中切换。
+
+演示依次放映 **冰湖、鱼灯、天文台** 三张照片。
 
 移动触控设备的前景虚焦默认 **2.0**，桌面端默认 **4.0**。移动浏览器若不支持文件夹选择，可在设置中点击 **也可以选择单张照片**。
 
@@ -47,4 +49,4 @@ npm start
 
 ## 许可
 
-原创代码与文档采用 [MIT 许可证](LICENSE)。第三方依赖与素材保留各自的许可条款，见[第三方说明](THIRD_PARTY_NOTICES.md)。
+原创代码与文档采用 [MIT 许可证](LICENSE)。依赖、随附照片及音频保留各自的许可条款，见[第三方说明](THIRD_PARTY_NOTICES.md)。

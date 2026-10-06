@@ -3,6 +3,7 @@
 .publish/
 node_modules/
 dist/
+assets/*.wav
 qa/
 reference/
 __pycache__/

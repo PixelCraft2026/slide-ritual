@@ -12,22 +12,22 @@ Three.js r160 采用 [MIT 许可](vendor/LICENSE-three)，再次分发时须保�
 
 ## Example photographs / 示例照片
 
-The photographs use the [Unsplash License](https://unsplash.com/license), rather than the project's MIT license. Source links are listed below; the Chinese display titles were assigned for this viewer.
+The demo photographs were supplied by the repository maintainer on 7 October 2026. They are excluded from the project's MIT license. Rights remain with their respective owners; this repository does not specify a separate reuse license for these photographs.
 
-示例照片遵循 [Unsplash License](https://unsplash.com/license)，不属于项目的 MIT 许可范围。下表记录来源；中文题名为本项目的观片题名。
+示例照片由仓库维护者于 2026 年 10 月 7 日提供，不属于项目的 MIT 许可范围。权利归各照片的权利人所有；仓库未为这些照片指定单独的再利用许可。
 
-| File | Source |
+| File | Demo title |
 | --- | --- |
-| `assets/alpine.jpg` | [Unsplash source](https://images.unsplash.com/photo-1464822759023-fed622ff2c3b) |
-| `assets/woodland.jpg` | [Unsplash source](https://images.unsplash.com/photo-1472396961693-142e6e269027) |
-| `assets/evening.jpg` | [Unsplash source](https://images.unsplash.com/photo-1500534623283-312aade485b7) |
+| `assets/ice lake.jpg` | Ice Lake / 冰湖 |
+| `assets/fish lantern.jpg` | Fish Lanterns / 鱼灯 |
+| `assets/observatory.jpg` | Observatory / 天文台 |
 
 ## Slide-change recording / 过片录音
 
-`assets/advance.wav`, `assets/advance-startup.wav`, and their MP3 playback copies were extracted from the latest recording supplied on 7 October 2026. A single mechanical cycle is trimmed and fitted to the regular and opening slide-change timings while preserving pitch. They are excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
+`assets/advance.mp3` and `assets/advance-startup.mp3` were extracted from the latest recording supplied on 7 October 2026. A single mechanical cycle is trimmed and fitted to the regular and opening slide-change timings while preserving pitch. They are excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
 
-`assets/advance.wav`、`assets/advance-startup.wav` 及对应的 MP3 播放副本截取自 2026 年 10 月 7 日最后提供的录音，采用单次机械动作，保持音高并分别适配普通与开场过片时长。不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
+`assets/advance.mp3`、`assets/advance-startup.mp3` 截取自 2026 年 10 月 7 日最后提供的录音，采用单次机械动作，保持音高并分别适配普通与开场过片时长。不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
 
-The fan source, `assets/fan.wav`, is synthesized by the project's `tools/prepare-fan.py`, rather than taken from this recording. `assets/fan.mp3` is its compressed playback copy. Lossless WAV sources stay in the repository; the web and offline viewers use MP3 playback copies.
+`assets/fan.mp3` is the compressed playback copy of the fan sound synthesized by the project's `tools/prepare-fan.py`. The current repository contains only these three MP3 playback files, also embedded in the offline viewer.
 
-风扇声源文件 `assets/fan.wav` 由项目的 `tools/prepare-fan.py` 合成，未使用上述录音；`assets/fan.mp3` 是其压缩播放副本。仓库保留无损 WAV 源文件，在线版与离线版使用 MP3 播放副本。
+`assets/fan.mp3` 是项目 `tools/prepare-fan.py` 合成风扇声的压缩播放副本。仓库当前只保留以上三份 MP3 播放文件，离线版也内嵌这三份音频。
