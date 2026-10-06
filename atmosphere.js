@@ -1,5 +1,43 @@
 // A restrained screen-space approximation of illuminated air. The HDR photo
 // remains on its own, unfiltered surface above this pass.
+export function supportsCanvasBlur(){
+  // Checking the property is insufficient: a browser can accept its value
+  // without applying the filter. Test actual spread into transparent pixels.
+  try{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=16;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx||!('filter' in ctx))return false;
+    ctx.filter='blur(2px)';ctx.fillStyle='#fff';ctx.fillRect(7,7,2,2);
+    const pixels=ctx.getImageData(0,0,16,16).data;
+    return pixels[(8*16+8)*4+3]>0&&pixels[(8*16+4)*4+3]>0;
+  }catch{return false;}
+}
+
+export function blurLightPixels(data,width,height,sigma){
+  // Three separable sliding-window box passes approximate a Gaussian in
+  // linear work per pixel. Premultiplication avoids dark translucent fringes.
+  if(!(sigma>0))return data;
+  sigma=Math.min(sigma,Math.max(width,height));
+  const a=new Float32Array(data.length),b=new Float32Array(data.length);
+  for(let i=0;i<data.length;i+=4){const alpha=data[i+3]/255;a[i]=data[i]*alpha;a[i+1]=data[i+1]*alpha;a[i+2]=data[i+2]*alpha;a[i+3]=alpha;}
+  const pass=(source,target,radius,horizontal)=>{
+    const length=horizontal?width:height,lines=horizontal?height:width,step=horizontal?4:width*4,divisor=radius*2+1;
+    for(let line=0;line<lines;line++){
+      const start=horizontal?line*width*4:line*4;let r=0,g=0,blue=0,alpha=0;
+      for(let j=0;j<=Math.min(radius,length-1);j++){const i=start+j*step;r+=source[i];g+=source[i+1];blue+=source[i+2];alpha+=source[i+3];}
+      for(let j=0;j<length;j++){
+        const i=start+j*step;target[i]=r/divisor;target[i+1]=g/divisor;target[i+2]=blue/divisor;target[i+3]=alpha/divisor;
+        if(j-radius>=0){const old=i-radius*step;r-=source[old];g-=source[old+1];blue-=source[old+2];alpha-=source[old+3];}
+        if(j+radius+1<length){const next=i+(radius+1)*step;r+=source[next];g+=source[next+1];blue+=source[next+2];alpha+=source[next+3];}
+      }
+    }
+  };
+  let lower=Math.floor(Math.sqrt(4*sigma*sigma+1));if(lower%2===0)lower--;
+  const count=Math.round((12*sigma*sigma-3*lower*lower-12*lower-9)/(-4*lower-4));
+  for(let i=0;i<3;i++){const radius=((i<count?lower:lower+2)-1)/2;pass(a,b,radius,true);pass(b,a,radius,false);}
+  for(let i=0;i<data.length;i+=4){const alpha=a[i+3];data[i]=alpha>1e-6?a[i]/alpha:0;data[i+1]=alpha>1e-6?a[i+1]/alpha:0;data[i+2]=alpha>1e-6?a[i+2]/alpha:0;data[i+3]=alpha*255;}
+  return data;
+}
+
 export async function snapshotLight(canvas){
   let image=canvas;if(typeof createImageBitmap==='function'){try{image=await createImageBitmap(canvas);}catch{/* Use the already rendered canvas on older implementations. */}}
   // Force deferred blur/raster work to finish while no transport is running.
