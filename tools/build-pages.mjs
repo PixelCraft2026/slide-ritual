@@ -9,7 +9,7 @@ if (existsSync(output) && lstatSync(output).isSymbolicLink()) throw new Error('P
 
 const files = [
   'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js', 'resample.js', 'pixels.js',
-  'scene.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js',
+  'scene.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js', 'native-projection.js',
   'darkroom.html', 'vendor/three.module.js', 'vendor/LICENSE-three',
   'assets/favicon.svg', 'assets/alpine.jpg', 'assets/woodland.jpg', 'assets/evening.jpg',
   'assets/advance.wav', 'assets/fan.wav',

@@ -6,10 +6,13 @@ import { ProjectorAudio } from './audio.js';
 import { ProjectorScene, WallLight } from './scene.js';
 import { AirLight } from './atmosphere.js';
 import { MachineLight } from './machine-light.js';
+import { NativeProjection } from './native-projection.js';
 import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, transitionAt, startupAt, projectionLayout } from './transition.js';
 
 const $=id=>document.getElementById(id);
-const room=$('room'),screen=$('screen'),native=$('nativeImage'),audio=new ProjectorAudio();
+const room=$('room'),screen=$('screen'),audio=new ProjectorAudio();
+let native=$('nativeImage');
+const nativeProjection=new NativeProjection($('opticalGate'),$('filmMotion'),document.querySelector('.surface-texture'));
 // Initialize once so viewport changes preserve the user's foreground blur.
 const initialDepth=matchMedia('(hover: none) and (pointer: coarse)').matches?2:4;
 $('depth').value=String(initialDepth);
@@ -132,7 +135,8 @@ function spillColor(source){
   for(let i=0;i<source.data.length;i+=Math.max(4,Math.floor(source.data.length/4096/4)*4)){for(let c=0;c<3;c++)sum[c]+=Math.sqrt(Math.max(0,Math.min(1,source.data[i+c])));count++;}
   return sum.map(x=>Math.round(80+(x/count)*110)).join(',');
 }
-async function preparePresentation(slide,loaded){
+async function preparePresentation(slide,loaded,epoch=state.epoch){
+  if(epoch!==state.epoch)return null;
   scene?.resize();const layout=presentationLayout(slide,false),dpr=Math.min(devicePixelRatio||1,2),viewport={width:Math.max(1,Math.round(layout.width*dpr)),height:Math.max(1,Math.round(layout.height*dpr))};
   machineLight.resize(layout.w,layout.h,scene,Number($('depth').value));
   if(!loaded.native&&renderer.mode!=='native')await renderer.stage(loaded.source,viewport);
@@ -142,26 +146,28 @@ async function preparePresentation(slide,loaded){
     for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
     ctx.putImageData(pixels,0,0);loaded.nativeURL=canvas.toDataURL();loaded.native=true;loaded.fallbackImage=await loadImage(loaded.nativeURL);
   }
-  await (loaded.image||loaded.fallbackImage)?.decode?.();
+  const nativeImage=loaded.native?await nativeProjection.prepare(loaded.image||loaded.fallbackImage,layout,{hdr:Boolean(slide.hdrCandidate&&loaded.image&&hdrQuery.matches&&state.displayMode==='auto'),displayMode:state.displayMode,...renderer.params}):null;
+  if(epoch!==state.epoch)return null;
   const preparedWall=await wall.prepare(loaded.source,layout),preparedAir=await air.prepare(layout,preparedWall.color);
-  const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded);
-  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source)};
+  if(epoch!==state.epoch)return null;
+  const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded,epoch);
+  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source),nativeImage};
 }
 function present(slide,loaded,prepared){
   mountProjection(false);
-  state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);native.hidden=!state.native;renderer.canvas.hidden=state.native;
-  if(state.native){native.src=loaded.nativeURL||slide.url;native.alt=slide.name;}
-  else {native.removeAttribute('src');renderer.upload(loaded.source,prepared.viewport);}
+  state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
+  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=slide.name;nativeProjection.activate();}
+  else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
-  for(const id of ['brightness','focus'])$(id).disabled=Boolean(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');
+  const hdr=Boolean(state.native&&state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');
+  for(const id of ['brightness','focus'])$(id).disabled=hdr;
   if(!state.native)return;
   // CSS filters may flatten native HDR. Keep the native HDR path untouched.
-  const hdr=state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto';
-  native.style.filter=hdr?'none':`brightness(${renderer.params.brightness*renderer.params.boost}) blur(${renderer.params.focus}px)`;
-  native.style.setProperty('dynamic-range-limit',state.displayMode==='sdr'?'standard':'no-limit');
-  for(const id of ['brightness','focus'])$(id).disabled=hdr;
+  const filter=hdr?'none':`brightness(${renderer.params.brightness*renderer.params.boost}) blur(${renderer.params.focus}px)`,range=state.displayMode==='sdr'?'standard':'no-limit';
+  if(native.style.filter!==filter)native.style.filter=filter;
+  if(native.style.getPropertyValue('dynamic-range-limit')!==range)native.style.setProperty('dynamic-range-limit',range);
 }
 function light(value,optics){exposure=value;const emitted=value*renderer.params.brightness,gain=optics?.adaptation??1;room.style.setProperty('--exposure',String(emitted));room.dataset.exposureGain=String(gain);wall.draw(emitted,optics);air.illuminate(emitted,wall.color,optics);scene?.illuminate(state.on?1:0,emitted,wall.color,gain*renderer.params.brightness);machineLight.renderer.params.highlight=renderer.params.highlight;machineLight.illuminate(state.on?1:0,gain,renderer.params.brightness);}
 function setOptics(frame){
@@ -169,16 +175,16 @@ function setOptics(frame){
   gate.style.opacity=String(frame.open>0?1:0);
   // Film moves through a fixed octagonal optical field. The field's boundary
   // stays in wall coordinates, so portrait and landscape intersections differ.
-  gate.style.clipPath=`inset(0 ${frame.clipRight*100}% 0 0)`;
-  gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';
-  renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native)applyNativeSettings();
+  if(state.native)nativeProjection.frame(frame);
+  else {gate.style.clipPath=`inset(0 ${frame.clipRight*100}% 0 0)`;gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';}
+  renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
   const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
   glow.style.width=`${projectionWidth*Math.max(.15,1-frame.clipRight)}px`;
   light(frame.exposure,frame);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath=state.native?'none':'inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function stopAuto(){state.auto=false;clearTimeout(autoTimer);autoTimer=null;updateUI();}
 function scheduleAuto(){clearTimeout(autoTimer);if(!state.auto||!state.on||document.hidden)return;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=state.index+1;if(next>=state.slides.length&&!$('loop').checked){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);}
 
@@ -186,7 +192,7 @@ function animateTransport(epoch,reverse,opening,onSwap){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS;
   transporting=true;air.setTransport(true);
   audio.advance(reverse,duration/1000);room.classList.add('changing');
-  const start=performance.now();let swapped=false;
+  const start=performance.now();nativeProjection.start(start,opening,reduceMotion.matches);let swapped=false;
   return new Promise(resolve=>{
     finishTransition=resolve;
     function frame(now){
@@ -223,7 +229,7 @@ async function power(){
     if(epoch!==state.epoch)return;
     audio.click();audio.startFan();$('opticalGate').style.opacity='0';
     state.on=true;state.aperture=true;state.native=false;state.nativeHDR=false;
-    native.hidden=true;renderer.canvas.hidden=false;mountProjection(true);renderer.upload(emptyGateSource);
+    native.hidden=true;nativeProjection.deactivate();renderer.canvas.hidden=false;mountProjection(true);renderer.upload(emptyGateSource);
     updateUI();displayStatus();fitScreen();wall.setSource(emptyGateSource);
     $('screenGlow').style.opacity='0';room.dataset.phase='warmup';
     room.style.setProperty('--lamp','.25');light(.07);await delay(reduceMotion.matches?150:550);if(epoch!==state.epoch)return;
@@ -289,7 +295,7 @@ async function importFiles(files,{folder=false}={}){
   if(slides.length){
     if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();}else state.slides.push(...slides);
     renderTray();fitScreen();
-    if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);present(slide,loaded,prepared);state.started=true;}catch(error){toast(error.message);}}
+    if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);if(prepared&&state.on){present(slide,loaded,prepared);state.started=true;}}catch(error){toast(error.message);}}
     toast(`已装入 ${slides.length} 张照片${failures.length?`\n${failures.length} 张未装入：${failures.slice(0,2).join('；')}`:''}`);
   }else toast(failures.slice(0,3).join('\n')||'没有可装入的照片');
   state.importing=false;updateUI();$('fileInput').value='';$('folderInput').value='';
