@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { NativeProjection, nativeKeyframes, nativeWipe, nativeExposureOpacity } from '../native-projection.js';
-import { transitionAt, startupAt, EXPOSURE_PEAK } from '../transition.js';
+import { transitionAt, startupAt, EXIT_MS, EXPOSURE_PEAK } from '../transition.js';
 import { transportHarness } from './helpers/transport-harness.mjs';
 
 const shift=transform=>Number(transform.match(/translate3d\(([^%]+)%/)[1])/100;
-function element(){return{style:{setProperty(name,value){this[name]=value;}},animations:[],animate(keyframes,options){const animation={keyframes,options,currentTime:0,cancel(){this.cancelled=true;}};this.animations.push(animation);return animation;}};}
+function element(){return{style:{setProperty(name,value){this[name]=value;}},animations:[],animate(keyframes,options){const animation={keyframes,options,currentTime:0,pause(){this.paused=true;},play(){this.paused=false;},cancel(){this.cancelled=true;}};this.animations.push(animation);return animation;}};}
 
 test('fixed-clip countertranslations preserve the visible image and source coordinates at every phase',()=>{
   for(const [at,duration]of [[transitionAt,1500],[startupAt,1850]])for(let ms=0;ms<=duration;ms++){
@@ -22,8 +22,33 @@ test('native timelines animate translation only and retain opening and closing l
     const frames=nativeKeyframes(opening);assert.equal(frames.gate[0].offset,0);assert.equal(frames.gate.at(-1).offset,1);
     assert.equal(frames.gate.length,frames.contents.length);
     for(const keyframe of [...frames.gate,...frames.contents])assert.deepEqual(Object.keys(keyframe).sort(),['offset','transform']);
-    for(const ms of opening?[200,1000,1300]:[133,600,967,1167])assert.ok(frames.gate.some(frame=>Math.abs(frame.offset-ms/frames.duration)<1e-12));
+    for(const ms of opening?[200,1000,1300]:[EXIT_MS,600,967,1167])assert.ok(frames.gate.some(frame=>Math.abs(frame.offset-ms/frames.duration)<1e-12));
   }
+});
+test('outgoing HDR photos never receive the incoming exposure boost',()=>{
+  for(const ev of [.5,1,2])for(const opening of [false,true]){
+    const at=opening?startupAt:transitionAt;
+    for(let ms=0;ms<(opening?1000:967);ms++)assert.equal(nativeExposureOpacity(at(ms),false,ev),0);
+    const timeline=nativeKeyframes(opening,false,ev);
+    for(const frame of timeline.exposure)if(frame.offset*timeline.duration<(opening?1000:967))assert.equal(frame.opacity,0);
+    assert.equal(nativeExposureOpacity(at(opening?1100:1050),false,ev),1);
+  }
+});
+test('outgoing native animations paint their paused initial pose before the transport clock starts',async()=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'requestAnimationFrame');let paints=0;
+  globalThis.requestAnimationFrame=callback=>queueMicrotask(()=>{paints++;callback(performance.now());});
+  try{
+    const gate=element(),projection=new NativeProjection(gate,element());projection.exposure=element();projection.activate(true);
+    await projection.prepareExit();const primed=[...projection.animations];assert.equal(paints,4);assert.equal(primed.length,3);
+    assert.ok(primed.every(animation=>animation.paused&&animation.currentTime===0));
+    projection.start(performance.now());assert.deepEqual(projection.animations,primed);assert.equal(gate.animations.length,1);assert.ok(primed.every(animation=>!animation.paused&&!animation.cancelled));
+    projection.reset();assert.ok(primed.every(animation=>animation.cancelled));
+    await projection.prepareExit();projection.reset();projection.start(performance.now());assert.ok(projection.animations.every(animation=>!animation.paused&&!animation.cancelled));
+    projection.reset();await projection.prepareExit(true);assert.equal(projection.animations.length,0);
+    let repaint;globalThis.requestAnimationFrame=callback=>{repaint=callback;};
+    const pending=projection.prepareExit();const interrupted=[...projection.animations];projection.reset();repaint(performance.now());await pending;
+    assert.equal(projection.transport,null);assert.equal(projection.animations.length,0);assert.ok(interrupted.every(animation=>animation.cancelled));
+  }finally{if(original)Object.defineProperty(globalThis,'requestAnimationFrame',original);else delete globalThis.requestAnimationFrame;}
 });
 
 test('reduced motion keeps the native photo stationary while its light gate opens',()=>{

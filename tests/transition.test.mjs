@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { transitionAt, mechanismAt, startupAt, projectionLayout, SLIDE_PITCH, GATE_Z, CHANGE_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK } from '../transition.js';
+import { transitionAt, mechanismAt, startupAt, projectionLayout, SLIDE_PITCH, GATE_Z, CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK } from '../transition.js';
 
-test('continuous reference timing includes 834 ms dark dwell and no crossfade',()=>{
+test('smooth exit retains the closed-gate swap and total transport duration',()=>{
   assert.equal(transitionAt(0).phase,'out');
-  assert.equal(transitionAt(132).phase,'out');
-  for(let t=133;t<967;t++){
+  assert.equal(EXIT_MS,200);assert.equal(transitionAt(EXIT_MS-1).phase,'out');
+  for(let t=EXIT_MS;t<967;t++){
     const f=transitionAt(t);assert.equal(f.phase,'dark');assert.equal(f.open,0);assert.equal(f.exposure,0);
   }
   assert.equal(transitionAt(967).phase,'in');
@@ -23,6 +23,21 @@ test('old slide exits laterally; incoming slit opens monotonically and settles',
   }
   assert.ok(transitionAt(90).shift<-.1);
   const end=transitionAt(CHANGE_MS);assert.equal(end.open,1);assert.equal(end.boost,1);assert.equal(end.blur,0);assert.equal(end.exposure,1);
+});
+test('exit mirrors the accepted entry geometry at the same speed without changing entry',()=>{
+  let previous=transitionAt(0);
+  for(let ms=0;ms<EXIT_MS;ms++){
+    const out=transitionAt(ms),p=1-ms/200;
+    const expected={open:p,shift:-.34*(1-((x)=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);})((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p)};
+    for(const [key,value]of Object.entries(expected))assert.ok(Math.abs(out[key]-value)<1e-12);
+    assert.ok(out.open<=previous.open&&out.clipRight>=previous.clipRight);
+    assert.ok(Math.abs(out.shift-previous.shift)<.0073,'exit must not move faster than entry');previous=out;
+    if(ms>0){const incoming=transitionAt(967+200-ms);for(const key of ['open','shift','clipRight','corner','blur'])assert.ok(Math.abs(out[key]-incoming[key])<1e-12);}
+  }
+  for(let ms=967;ms<1167;ms++){
+    const f=transitionAt(ms),p=(ms-967)/200;
+    assert.equal(f.clipRight,1-Math.min(1,p*1.3));assert.equal(f.exposure,p*EXPOSURE_PEAK);
+  }
 });
 
 test('one continuous exposure recovery drives blackout emitters and entering photos',()=>{

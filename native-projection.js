@@ -1,9 +1,11 @@
-import { CHANGE_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK, transitionAt, startupAt } from './transition.js';
+import { CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK, transitionAt, startupAt } from './transition.js';
 import { ProjectionRenderer } from './renderer.js';
 
 export const DEFAULT_HDR_ENTRY_EV=1;
 export function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
-  if(reduced||ev<=0)return 0;
+  // This layer is the incoming photo's exposure recovery. Keep the outgoing
+  // original at its settled brightness instead of flashing up to +2 EV.
+  if(reduced||ev<=0||(frame.phase&&!['in','settle'].includes(frame.phase)))return 0;
   const envelope=Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));
   // Map the recovery in exposure stops to the pre-rendered HDR peak layer.
   return (2**(ev*envelope)-1)/(2**ev-1);
@@ -17,7 +19,7 @@ export function nativeWipe(frame){
 
 export function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS,at=opening?startupAt:transitionAt;
-  const times=new Set([0,duration,...(opening?[200,1000,1300]:[133,600,967,1167])]);
+  const times=new Set([0,duration,...(opening?[200,1000,1300]:[EXIT_MS,600,967,1167])]);
   for(let ms=1000/120;ms<duration;ms+=1000/120)times.add(ms);
   const gate=[],contents=[],exposure=[];
   for(const ms of [...times].sort((a,b)=>a-b)){
@@ -131,7 +133,27 @@ export class NativeProjection {
     for(const element of [this.gate,this.motion,this.texture])if(element){element.style.willChange='';element.style.transform='none';}
     this.gate.style.clipPath='inset(0)';
   }
-  start(startedAt,opening=false,reduced=false){this.transport={startedAt,opening,reduced};if(this.active)this.play();}
+  async prepareExit(reduced=false){
+    if(!this.active||reduced)return;
+    const pending={startedAt:performance.now(),opening:false,reduced,warming:true};this.transport=pending;
+    this.play();
+    try{
+      // Creating a compositor animation can trigger the first HDR raster.
+      // Paint its paused initial pose while the old photo is still at rest,
+      // then reuse these animations rather than spending exit time on it.
+      for(const animation of this.animations){animation.pause();animation.currentTime=0;}
+      if(!this.animations.length){this.transport=null;return;}
+      for(let frame=0;frame<4&&this.transport===pending;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    }catch{if(this.transport===pending){this.transport=null;this.cancel();}}
+  }
+  start(startedAt,opening=false,reduced=false){
+    const primed=this.transport?.warming&&this.transport.opening===opening&&this.transport.reduced===reduced&&this.animations.length;
+    this.transport={startedAt,opening,reduced};
+    if(this.active){
+      if(primed){const elapsed=Math.max(0,performance.now()-startedAt);for(const animation of this.animations){animation.currentTime=elapsed;animation.play();}}
+      else this.play();
+    }
+  }
   play(){
     this.cancel();
     if(![this.gate,this.motion,this.texture].filter(Boolean).every(element=>typeof element.animate==='function'))return;

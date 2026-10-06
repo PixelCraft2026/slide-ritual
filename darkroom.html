@@ -4,7 +4,7 @@
 #wallLight{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.wall-grain{position:absolute;inset:0;z-index:1;opacity:.065;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.63' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' opacity='.6' d='M0 0h280v280H0z'/%3E%3C/svg%3E")}
 .projection-stage{position:absolute;inset:0;z-index:2;pointer-events:none}.screen,.screen-glow,.lamp-aperture{position:absolute;left:50%;top:37%;width:var(--screen-width);height:var(--screen-height);transform:translate(-50%,-50%) rotate(.22deg);transform-origin:center}.screen{overflow:visible;opacity:0}.lit .screen{opacity:1}.optical-gate{width:100%;height:100%;overflow:hidden;clip-path:polygon(0 0,100% 0,100% 100%,0 100%);position:relative;pointer-events:auto;border-radius:.7px}.film-motion{position:absolute;inset:0;transform-origin:left center}#projection,#nativeImage{width:100%;height:100%;display:block;object-fit:fill;dynamic-range-limit:no-limit}#nativeImage{image-orientation:from-image}.surface-texture{position:absolute;inset:0;pointer-events:none;opacity:calc(var(--texture)*.16);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' d='M0 0h220v220H0z'/%3E%3C/svg%3E")}.screen-glow{background:rgba(var(--spill),.26);filter:blur(16px);opacity:calc(var(--exposure)*.3);pointer-events:none;box-shadow:0 0 16px 6px rgba(var(--spill),.16);border-radius:7px}.lamp-aperture{opacity:0;background:radial-gradient(ellipse,#fff6cf,#d9c091);clip-path:polygon(14% 0,86% 0,100% 16%,100% 84%,86% 100%,14% 100%,0 84%,0 16%);filter:blur(1px)}
 .projector{position:absolute;z-index:4;bottom:-8vh;left:50%;transform:translateX(-50%);width:min(115vh,92vw);height:59vh;filter:blur(var(--foreground-blur));pointer-events:none}.lens-haze{position:absolute;z-index:5;pointer-events:none;left:24%;bottom:-18%;width:46%;height:49%;background:radial-gradient(ellipse at 35% 50%,#d7b98208,transparent 66%);opacity:var(--lamp)}.room-vignette{position:absolute;z-index:6;pointer-events:none;inset:0;background:radial-gradient(ellipse at 50% 34%,transparent 24%,#0002 67%,#0008 100%),linear-gradient(transparent 84%,#0007)}
-.controls{position:fixed;z-index:10;top:50%;right:18px;transform:translateY(-50%) translateX(0);transition:transform .55s cubic-bezier(.2,.75,.3,1),opacity .5s;display:flex;align-items:center;pointer-events:none}.controls>*{pointer-events:auto}.room:not(.interacting) .controls{transform:translateY(-50%) translateX(calc(100% + 360px));opacity:0}.room:not(.interacting){cursor:none}.control-rail{display:flex;flex-direction:column;align-items:center;gap:4px;background:linear-gradient(115deg,#292723ac,#141311b8);border:1px solid #ffffff10;box-shadow:0 6px 36px #0003,inset 0 1px #ffffff07;border-radius:15px;padding:10px 7px;backdrop-filter:blur(18px);width:58px}.tool{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:transparent;border:0;border-radius:8px;width:40px;height:36px;color:#b3b0a8;transition:color .2s,background .2s}.tool:hover{background:#ffffff0d;color:#f4edde}.tool[aria-pressed=true]{color:#e6d6b6}.folder-button{height:57px;flex-direction:column;gap:7px}.folder-button span{font-size:9px;letter-spacing:1px}.folder-button svg{width:21px;height:21px}.rail-rule{height:1px;width:24px;background:#ffffff13;margin:5px 0}.counter{display:flex;align-items:center;gap:3px;font:9px Consolas,monospace;color:#807e77;margin:3px 0}.counter b{color:#bcb7a9;font-weight:400}.start-card{position:absolute;right:80px;top:11px;width:188px;padding:20px 21px;background:#211e19a6;border:1px solid #eee1c310;backdrop-filter:blur(14px);border-radius:9px}.small-label{font-size:10px;letter-spacing:3px;color:#938675}.start-card p{font:18px/1.7 "Songti SC",SimSun,serif;color:#ded5c5;margin:15px 0 19px}.start-card small{display:block;font-size:9px;color:#776f63;margin-top:20px;white-space:nowrap}.text-button{background:transparent;border:0;padding:0;font-size:11px;color:#b8ab95}.text-button:hover{color:#f3e8d2}.text-button span{margin-left:17px}.settings{position:absolute;right:76px;top:50%;transform:translateY(-50%);width:288px;max-height:calc(100svh - 34px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#625d51 transparent;background:#1d1b17ed;border:1px solid #ffffff12;border-radius:12px;box-shadow:0 15px 60px #0008;backdrop-filter:blur(24px);padding:15px 22px 23px}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.settings-heading h1{font-size:12px;font-weight:400;letter-spacing:2px}.settings-heading .tool{font-size:24px;width:25px}.current-photo{display:flex;flex-direction:column;gap:5px;margin-bottom:25px}.current-photo>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.current-photo small{font:9px Consolas,"Microsoft YaHei",monospace;color:#7e796e}.setting{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}.setting>span{display:flex;justify-content:space-between;font-size:10px;color:#aaa396}.setting output{font:10px Consolas,monospace;color:#817b6f}.setting input[type=range]{appearance:none;width:100%;height:2px;background:#484237;margin:3px 0;cursor:pointer}.setting input[type=range]::-webkit-slider-thumb{appearance:none;width:10px;height:10px;border:1px solid #c7b998;background:#b5a583;border-radius:50%}.setting input[type=range]::-moz-range-thumb{width:10px;height:10px;background:#b5a583;border:1px solid #c7b998;border-radius:50%}.select-setting{flex-direction:row;align-items:center}.setting select{background:#302b22;border:1px solid #4a4336;border-radius:4px;padding:5px 7px;color:#b1a892;font-size:10px}.check-setting{font-size:10px;display:flex;gap:7px;align-items:center;color:#a39a87}.check-setting input{accent-color:#b6a47d}.display-info{border-top:1px solid #ffffff0c;padding-top:14px;margin-top:16px;display:flex;flex-direction:column;gap:7px}.range-badge{border:0;padding:0;background:none;display:flex;align-items:center;gap:6px;font:9px Consolas,"Microsoft YaHei",monospace;color:#9c947f}.range-badge i{width:4px;height:4px;border-radius:50%;background:#8c886e}.range-badge.hdr i{background:#d7cfa4;box-shadow:0 0 7px #e5cf8090}.display-info small,.help{font-size:9px;line-height:1.9;color:#736f63}.tray-heading{display:flex;justify-content:space-between;font-size:10px;color:#8c8370;margin:22px 0 10px}.filmstrip{display:flex;gap:7px;overflow:auto;scrollbar-width:thin;padding:3px 0 9px}.slide{position:relative;flex-shrink:0;width:53px;height:45px;padding:5px 5px 11px;background:#514d42;border:1px solid #ffffff10;opacity:.5;border-radius:1px}.slide[aria-current=true]{opacity:1;background:#aaa08b}.slide img{width:100%;height:100%;object-fit:contain}.slide-number{position:absolute;bottom:2px;left:6px;font:6px Consolas;color:#28261f}.slide-type{display:none}.secondary-button{width:100%;background:none;border:1px solid #51493b;border-radius:5px;padding:9px;font-size:10px;color:#a69b87;margin:8px 0 15px}.help{display:block}.toast{position:absolute;right:80px;bottom:0;width:240px;background:#292419eb;backdrop-filter:blur(18px);border:1px solid #b2a58423;border-radius:7px;padding:13px 17px;font-size:11px;line-height:1.8;white-space:pre-line;opacity:0;transform:translateX(10px);transition:opacity .25s,transform .3s;pointer-events:none}.toast.visible{opacity:1;transform:translateX(0)}.drop-overlay{position:absolute;inset:12px;z-index:20;background:#18150ec9;backdrop-filter:blur(4px);border:1px dashed #a9997860;display:grid;place-items:center;font:22px SimSun,serif;letter-spacing:4px;pointer-events:none}.sr-only{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
+.controls{position:fixed;z-index:10;top:50%;right:18px;transform:translateY(-50%) translateX(0);transition:transform .55s cubic-bezier(.2,.75,.3,1),opacity .5s;display:flex;align-items:center;pointer-events:none}.controls>*{pointer-events:auto}.room:not(.interacting) .controls{transform:translateY(-50%) translateX(calc(100% + 360px));opacity:0}.room:not(.interacting){cursor:none}.control-rail{display:flex;flex-direction:column;align-items:center;gap:4px;background:linear-gradient(115deg,#292723ac,#141311b8);border:1px solid #ffffff10;box-shadow:0 6px 36px #0003,inset 0 1px #ffffff07;border-radius:15px;padding:10px 7px;backdrop-filter:blur(18px);width:58px}.tool{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:transparent;border:0;border-radius:8px;width:40px;height:36px;color:#b3b0a8;transition:color .2s,background .2s}.tool:hover{background:#ffffff0d;color:#f4edde}.tool[aria-pressed=true]{color:#e6d6b6}.folder-button{height:57px;flex-direction:column;gap:7px}.folder-button span{font-size:9px;letter-spacing:1px}.folder-button svg{width:21px;height:21px}.rail-rule{height:1px;width:24px;background:#ffffff13;margin:5px 0}.counter{display:flex;align-items:center;gap:3px;font:9px Consolas,monospace;color:#807e77;margin:3px 0}.counter b{color:#bcb7a9;font-weight:400}.start-card{position:absolute;right:80px;top:11px;width:188px;padding:20px 21px;background:#211e19a6;border:1px solid #eee1c310;backdrop-filter:blur(14px);border-radius:9px}.small-label{font-size:10px;letter-spacing:3px;color:#938675}.start-card p{font:18px/1.7 "Songti SC",SimSun,serif;color:#ded5c5;margin:15px 0 19px}.start-card small{display:block;font-size:9px;color:#776f63;margin-top:20px;white-space:nowrap}.text-button{background:transparent;border:0;padding:0;font-size:11px;color:#b8ab95}.text-button:hover{color:#f3e8d2}.text-button span{margin-left:17px}.settings{position:absolute;right:76px;top:50%;transform:translateY(-50%);width:288px;max-height:calc(100svh - 34px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#625d51 transparent;background:#1d1b17ed;border:1px solid #ffffff12;border-radius:12px;box-shadow:0 15px 60px #0008;backdrop-filter:blur(24px);padding:15px 22px 23px}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.settings-heading h1{font-size:12px;font-weight:400;letter-spacing:2px}.settings-heading .tool{font-size:24px;width:25px}.current-photo{display:flex;flex-direction:column;gap:5px;margin-bottom:16px}.current-photo>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.current-photo small{font:9px Consolas,"Microsoft YaHei",monospace;color:#7e796e}.setting{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}.setting>span{display:flex;justify-content:space-between;font-size:10px;color:#aaa396}.setting output{font:10px Consolas,monospace;color:#817b6f}.setting input[type=range]{appearance:none;width:100%;height:2px;background:#484237;margin:3px 0;cursor:pointer}.setting input[type=range]::-webkit-slider-thumb{appearance:none;width:10px;height:10px;border:1px solid #c7b998;background:#b5a583;border-radius:50%}.setting input[type=range]::-moz-range-thumb{width:10px;height:10px;background:#b5a583;border:1px solid #c7b998;border-radius:50%}.select-setting{flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.select-setting>span{flex-shrink:0}.select-setting select{margin-left:auto;min-width:0;max-width:100%}.setting select{background:#302b22;border:1px solid #4a4336;border-radius:4px;padding:5px 7px;color:#b1a892;font-size:10px}.check-setting{font-size:10px;display:flex;gap:7px;align-items:center;color:#a39a87}.check-setting input{accent-color:#b6a47d}.display-info{border-top:1px solid #ffffff0c;padding-top:14px;margin:16px 0 20px;display:flex;flex-direction:column;gap:7px}.range-badge{border:0;padding:0;background:none;display:flex;align-items:center;gap:6px;font:9px Consolas,"Microsoft YaHei",monospace;color:#9c947f}.range-badge i{width:4px;height:4px;border-radius:50%;background:#8c886e}.range-badge.hdr i{background:#d7cfa4;box-shadow:0 0 7px #e5cf8090}.display-info small,.help{font-size:9px;line-height:1.9;color:#736f63}.tray-heading{display:flex;justify-content:space-between;font-size:10px;color:#8c8370;margin:0 0 10px}.filmstrip{display:flex;gap:7px;overflow:auto;scrollbar-width:thin;padding:3px 0 9px}.slide{position:relative;flex-shrink:0;width:53px;height:45px;padding:5px 5px 11px;background:#514d42;border:1px solid #ffffff10;opacity:.5;border-radius:1px}.slide[aria-current=true]{opacity:1;background:#aaa08b}.slide img{width:100%;height:100%;object-fit:contain}.slide-number{position:absolute;bottom:2px;left:6px;font:6px Consolas;color:#28261f}.slide-type{display:none}.secondary-button{width:100%;background:none;border:1px solid #51493b;border-radius:5px;padding:9px;font-size:10px;color:#a69b87;margin:8px 0 15px}.help{display:block}.toast{position:absolute;right:80px;bottom:0;width:240px;background:#292419eb;backdrop-filter:blur(18px);border:1px solid #b2a58423;border-radius:7px;padding:13px 17px;font-size:11px;line-height:1.8;white-space:pre-line;opacity:0;transform:translateX(10px);transition:opacity .25s,transform .3s;pointer-events:none}.toast.visible{opacity:1;transform:translateX(0)}.drop-overlay{position:absolute;inset:12px;z-index:20;background:#18150ec9;backdrop-filter:blur(4px);border:1px dashed #a9997860;display:grid;place-items:center;font:22px SimSun,serif;letter-spacing:4px;pointer-events:none}.sr-only{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
 @media(max-width:600px){.controls{right:10px}.control-rail{width:48px;padding:8px 3px;border-radius:12px;gap:2px}.tool{width:36px;height:33px}.folder-button{height:49px}.folder-button span{font-size:8px}.counter{font-size:8px}.settings{right:59px;width:min(276px,calc(100vw - 80px));padding:13px 17px 20px}.start-card{right:65px;width:170px;padding:17px}.toast{right:62px;width:220px}.projector{width:128vw;height:47vh;bottom:-4vh;left:46%}.screen,.screen-glow,.lamp-aperture{top:34%}.room-vignette{background:radial-gradient(ellipse at 50% 35%,transparent 30%,#0005 100%),linear-gradient(transparent 85%,#0008)}}
 @media(max-height:570px) and (min-width:601px){.control-rail{gap:0;padding:5px}.tool{height:28px}.folder-button{height:46px}.rail-rule{margin:3px}.start-card{top:0}.projector{height:66vh;bottom:-15vh}}
 button{padding:0}.folder-button span{white-space:nowrap}
@@ -33,7 +33,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
 :root{--foreground-blur:4px;--projector-y:5vh;--projection-center:34%}
 .aperture-window,.screen-glow,.lamp-aperture{top:var(--projection-center)}
 @media(max-width:600px){:root{--projection-center:37%}}
-.language-setting{justify-content:space-between;gap:8px}.language-setting>span{flex-shrink:0}.language-setting select{min-width:0}
+.playback-settings{padding-bottom:20px;margin-bottom:20px;border-bottom:1px solid #ffffff0c}
 </style></head>
 <body><main id="room" class="room off interacting">
   <canvas id="wallLight" aria-hidden="true"></canvas><div class="wall-grain" aria-hidden="true"></div>
@@ -62,10 +62,27 @@ button{padding:0}.folder-button span{white-space:nowrap}
     <aside id="settings" class="settings" hidden aria-label="放映设置">
       <div class="settings-heading"><h1>放映设置</h1><button id="closeSettings" class="tool" aria-label="关闭设置">×</button></div>
       <div class="current-photo"><span id="photoName">山间来信</span><small id="photoMeta">示例照片 · SDR</small></div>
+      <div class="photo-library">
+        <div class="tray-heading"><span id="trayLabel">3 张照片</span><button id="clearBtn" class="text-button" hidden>清空</button></div>
+        <div id="filmstrip" class="filmstrip" aria-label="片匣中的照片"></div>
+        <button id="filesBtn" class="secondary-button">也可以选择单张照片</button>
+        <small class="help">← → 过片 · 空格 播放 / 暂停<br>F 全屏 · M 声音 · P 电源<br>照片只在本机处理。文件夹按文件名顺序放映，包含子文件夹。</small>
+      </div>
+      <div class="display-info"><button id="rangeBadge" class="range-badge"><i></i><span>检测显示环境</span></button><small id="displayInfo"></small></div>
+      <div class="playback-settings">
+        <label class="setting select-setting"><span>显示模式</span><select id="displayMode"><option value="auto">自动 · 优先 HDR</option><option value="sdr">SDR</option></select></label>
+        <label class="setting select-setting language-setting"><span>语言 / Language</span><select id="language" aria-label="语言 / Language"><option value="auto">跟随系统</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
+        <label class="check-setting"><input id="loop" type="checkbox" checked><span>循环放映</span></label>
+      </div>
+      <label class="setting"><span>每张停留 <output id="intervalValue">4 秒</output></span><input id="interval" aria-label="每张停留" type="range" min="2" max="30" step="0.5" value="4"></label>
       <label class="setting"><span>画面大小 <output id="zoomValue">100%</output></span><input id="zoom" type="range" min="0.7" max="1.5" step="0.01" value="1"></label>
       <label class="setting"><span>灯光亮度 <output id="brightnessValue">100%</output></span><input id="brightness" type="range" min="0.4" max="1.6" step="0.01" value="1"></label>
       <label class="setting"><span>镜头对焦 <output id="focusValue">清晰</output></span><input id="focus" type="range" min="0" max="3" step="0.05" value="0"></label>
       <label class="setting"><span>前景虚焦 <output id="depthValue">4.0</output></span><input id="depth" type="range" min="1" max="9" step="0.1" value="4"></label>
+      <label class="setting"><span>投影质感 <output id="textureValue">轻微</output></span><input id="texture" type="range" min="0" max="1" step="0.01" value="0.22"></label>
+      <label class="setting"><span>机械声音 <output id="volumeValue">55%</output></span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.55"></label>
+      <label class="setting"><span>风扇底噪 <output id="fanVolumeValue">18%</output></span><input id="fanVolume" aria-label="风扇底噪" type="range" min="0" max="1" step="0.01" value="0.18"></label>
+      <label class="setting" id="highlightSetting"><span>SDR 高光扩展 <output id="highlightValue">2.0×</output></span><input id="highlight" type="range" min="1" max="4" step="0.1" value="2"></label>
       <details id="lightingSettings" class="position-settings"><summary>光照设置</summary>
       <label class="setting"><span>HDR 入场曝光 <output id="hdrEntryEVValue">+1.0 EV</output></span><input id="hdrEntryEV" aria-label="HDR 入场曝光" type="range" min="0" max="2" step="0.1" value="1"></label>
       <label class="setting"><span>墙面散射 <output id="diffusionValue">100%</output></span><input id="diffusion" type="range" min="0" max="1.8" step="0.01" value="1"></label>
@@ -83,18 +100,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
         <label class="setting"><span>垂直位置 <output id="photoYValue">下 3%</output></span><input id="photoY" aria-label="幻灯片垂直位置" type="range" min="-15" max="15" step="1" value="-3"></label>
         <button id="resetPhotoPosition" class="text-button" type="button">幻灯片位置复位</button>
       </details>
-      <label class="setting"><span>投影质感 <output id="textureValue">轻微</output></span><input id="texture" type="range" min="0" max="1" step="0.01" value="0.22"></label>
-      <label class="setting"><span>机械声音 <output id="volumeValue">55%</output></span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.55"></label>
-      <label class="setting"><span>风扇底噪 <output id="fanVolumeValue">18%</output></span><input id="fanVolume" aria-label="风扇底噪" type="range" min="0" max="1" step="0.01" value="0.18"></label>
-      <label class="setting"><span>每张停留 <output id="intervalValue">4 秒</output></span><input id="interval" aria-label="每张停留" type="range" min="2" max="30" step="0.5" value="4"></label>
-      <label class="setting select-setting"><span>显示模式</span><select id="displayMode"><option value="auto">自动 · 优先 HDR</option><option value="sdr">SDR</option></select></label>
-      <label class="setting select-setting language-setting"><span>语言 / Language</span><select id="language" aria-label="语言 / Language"><option value="auto">跟随系统</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
-      <label class="setting" id="highlightSetting"><span>SDR 高光扩展 <output id="highlightValue">2.0×</output></span><input id="highlight" type="range" min="1" max="4" step="0.1" value="2"></label>
-      <label class="check-setting"><input id="loop" type="checkbox" checked><span>循环放映</span></label>
-      <div class="display-info"><button id="rangeBadge" class="range-badge"><i></i><span>检测显示环境</span></button><small id="displayInfo"></small></div>
-      <div class="tray-heading"><span id="trayLabel">3 张照片</span><button id="clearBtn" class="text-button" hidden>清空</button></div><div id="filmstrip" class="filmstrip" aria-label="片匣中的照片"></div>
-      <button id="filesBtn" class="secondary-button">也可以选择单张照片</button>
-      <small class="help">← → 过片 · 空格 播放 / 暂停<br>F 全屏 · M 声音 · P 电源<br>照片只在本机处理。文件夹按文件名顺序放映，包含子文件夹。</small><span id="machineState" class="sr-only" aria-live="polite">待机</span>
+      <span id="machineState" class="sr-only" aria-live="polite">待机</span>
     </aside>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
   </div>
@@ -689,6 +695,7 @@ class ProjectorAudio {
 // Based on reference/画面参考2.mp4, original PTS 18.883333–20.383333.
 // See qa/reference-sequence.json: 121 consecutive source frames, no resampling.
 const CHANGE_MS=1500;
+const EXIT_MS=200;
 const STARTUP_CHANGE_MS=1850;
 const APERTURE_HOLD_MS=5000;
 // One camera-exposure recovery for the image and every housing emitter.
@@ -697,12 +704,15 @@ const SLIDE_PITCH=.098;
 const GATE_Z=-.22;
 const clamp=x=>Math.max(0,Math.min(1,x));
 const smooth=x=>{x=clamp(x);return x*x*(3-2*x);};
+const filmEntry=p=>({shift:-.34*(1-smooth((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p)});
 function transitionAt(ms){
-  if(ms<133){const p=clamp(ms/133),gain=1+(EXPOSURE_PEAK-1)*smooth(p);return {phase:'out',open:1-p,shift:-.34*smooth(p/.30),clipRight:p,corner:.14*Math.sin(p*Math.PI),blur:6*Math.sin(p*Math.PI),exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
+  // Reverse the accepted entry trajectory at the same speed. The old 133 ms
+  // wipe completed most lateral movement in 40 ms and looked like a flash.
+  if(ms<EXIT_MS){const p=clamp(ms/EXIT_MS),gain=1+(EXPOSURE_PEAK-1)*smooth(p);return {phase:'out',open:1-p,...filmEntry(1-p),exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
   if(ms<967)return {phase:'dark',open:0,shift:0,clipRight:1,corner:0,blur:0,exposure:0,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:ms>=600};
   // The aperture's left edge holds while the slit widens (frames 76–85),
   // then the film mount seats to the right (frames 86–90).
-  if(ms<1167){const p=clamp((ms-967)/200);return {phase:'in',open:p,shift:-.34*(1-smooth((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p),exposure:p*EXPOSURE_PEAK,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:true};}
+  if(ms<1167){const p=clamp((ms-967)/200);return {phase:'in',open:p,...filmEntry(p),exposure:p*EXPOSURE_PEAK,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:true};}
   const p=smooth((ms-1167)/333),gain=1+(EXPOSURE_PEAK-1)*(1-p);return {phase:'settle',open:1,shift:Math.sin((ms-1167)*.08)*.0018*(1-p),clipRight:0,corner:0,blur:.6*(1-p),exposure:gain,boost:gain,adaptation:gain,swap:true};
 }
 
@@ -728,8 +738,8 @@ function mechanismAt(ms,reverse=false){
 // Include the beginning of the empty-gate wipe seen just before frame 297.
 function startupAt(ms){
   let mechanicalMs;
-  if(ms<200)mechanicalMs=ms/200*133;
-  else if(ms<1000)mechanicalMs=133+(ms-200)/800*834;
+  if(ms<200)mechanicalMs=ms/200*EXIT_MS;
+  else if(ms<1000)mechanicalMs=EXIT_MS+(ms-200)/800*(967-EXIT_MS);
   else if(ms<1300)mechanicalMs=967+(ms-1000)/300*200;
   else mechanicalMs=1167+Math.min(1,(ms-1300)/550)*333;
   const f=transitionAt(mechanicalMs);
@@ -1326,7 +1336,9 @@ class MachineLight {
 
 const DEFAULT_HDR_ENTRY_EV=1;
 function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
-  if(reduced||ev<=0)return 0;
+  // This layer is the incoming photo's exposure recovery. Keep the outgoing
+  // original at its settled brightness instead of flashing up to +2 EV.
+  if(reduced||ev<=0||(frame.phase&&!['in','settle'].includes(frame.phase)))return 0;
   const envelope=Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));
   // Map the recovery in exposure stops to the pre-rendered HDR peak layer.
   return (2**(ev*envelope)-1)/(2**ev-1);
@@ -1340,7 +1352,7 @@ function nativeWipe(frame){
 
 function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS,at=opening?startupAt:transitionAt;
-  const times=new Set([0,duration,...(opening?[200,1000,1300]:[133,600,967,1167])]);
+  const times=new Set([0,duration,...(opening?[200,1000,1300]:[EXIT_MS,600,967,1167])]);
   for(let ms=1000/120;ms<duration;ms+=1000/120)times.add(ms);
   const gate=[],contents=[],exposure=[];
   for(const ms of [...times].sort((a,b)=>a-b)){
@@ -1454,7 +1466,27 @@ class NativeProjection {
     for(const element of [this.gate,this.motion,this.texture])if(element){element.style.willChange='';element.style.transform='none';}
     this.gate.style.clipPath='inset(0)';
   }
-  start(startedAt,opening=false,reduced=false){this.transport={startedAt,opening,reduced};if(this.active)this.play();}
+  async prepareExit(reduced=false){
+    if(!this.active||reduced)return;
+    const pending={startedAt:performance.now(),opening:false,reduced,warming:true};this.transport=pending;
+    this.play();
+    try{
+      // Creating a compositor animation can trigger the first HDR raster.
+      // Paint its paused initial pose while the old photo is still at rest,
+      // then reuse these animations rather than spending exit time on it.
+      for(const animation of this.animations){animation.pause();animation.currentTime=0;}
+      if(!this.animations.length){this.transport=null;return;}
+      for(let frame=0;frame<4&&this.transport===pending;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
+    }catch{if(this.transport===pending){this.transport=null;this.cancel();}}
+  }
+  start(startedAt,opening=false,reduced=false){
+    const primed=this.transport?.warming&&this.transport.opening===opening&&this.transport.reduced===reduced&&this.animations.length;
+    this.transport={startedAt,opening,reduced};
+    if(this.active){
+      if(primed){const elapsed=Math.max(0,performance.now()-startedAt);for(const animation of this.animations){animation.currentTime=elapsed;animation.play();}}
+      else this.play();
+    }
+  }
   play(){
     this.cancel();
     if(![this.gate,this.motion,this.texture].filter(Boolean).every(element=>typeof element.animate==='function'))return;
@@ -1942,6 +1974,7 @@ async function goTo(index){
   try{
     const slide=state.slides[index],loaded=await loadSlide(slide);if(epoch!==state.epoch)return;
     const prepared=await preparePresentation(slide,loaded);if(epoch!==state.epoch)return;
+    await nativeProjection.prepareExit(reduceMotion.matches);if(epoch!==state.epoch)return;
     await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();

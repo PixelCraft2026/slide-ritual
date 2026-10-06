@@ -267,6 +267,7 @@ async function goTo(index){
   try{
     const slide=state.slides[index],loaded=await loadSlide(slide);if(epoch!==state.epoch)return;
     const prepared=await preparePresentation(slide,loaded);if(epoch!==state.epoch)return;
+    await nativeProjection.prepareExit(reduceMotion.matches);if(epoch!==state.epoch)return;
     await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();
