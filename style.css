@@ -32,3 +32,4 @@ button{padding:0}.folder-button span{white-space:nowrap}
 :root{--foreground-blur:4px;--projector-y:5vh;--projection-center:34%}
 .aperture-window,.screen-glow,.lamp-aperture{top:var(--projection-center)}
 @media(max-width:600px){:root{--projection-center:37%}}
+.language-setting{justify-content:space-between;gap:8px}.language-setting>span{flex-shrink:0}.language-setting select{min-width:0}

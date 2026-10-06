@@ -41,6 +41,20 @@ export async function halfPixels(data,cooperative=false){
   return half;
 }
 
+export async function gainMapPixels(pixels,gains,width,height,colorSpace,metadata,cooperative=false){
+  if(pixels.length!==width*height*4||gains.length!==pixels.length)throw new Error('Invalid gain map dimensions');
+  const source=await linearPixels(pixels,width,height,colorSpace,cooperative),tables=metadata.minimum.map((min,c)=>Float32Array.from({length:256},(_,v)=>2**(min+(metadata.maximum[c]-min)*(v/255)**(1/metadata.gamma[c]))));
+  let peak=0;
+  for(let start=0;start<source.data.length;start+=262144){
+    const end=Math.min(source.data.length,start+262144);
+    for(let i=start;i<end;i+=4)for(let c=0;c<3;c++){
+      const value=Math.max(0,(source.data[i+c]+metadata.offsetSDR[c])*tables[c][gains[i+c]]-metadata.offsetHDR[c]);source.data[i+c]=value;peak=Math.max(peak,value);
+    }
+    if(cooperative&&end<source.data.length)await yieldPixelWork();
+  }
+  source.hdr=true;source.peak=peak;return source;
+}
+
 export async function lanczosPixels(data,sourceWidth,sourceHeight,width,height,cooperative=false){
   let horizontal=data;
   if(width!==sourceWidth){
@@ -65,14 +79,14 @@ export async function projectionPixels(source,viewport,cooperative=false){
 }
 
 export async function pixelJob(job,cooperative=false){
-  const source=job.type==='decode'?await linearPixels(job.pixels,job.width,job.height,job.colorSpace,cooperative):job.type==='radiance'?decodeRadiance(job.buffer):job.source;
+  const source=job.type==='gainmap'?await gainMapPixels(job.pixels,job.gains,job.width,job.height,job.colorSpace,job.metadata,cooperative):job.type==='decode'?await linearPixels(job.pixels,job.width,job.height,job.colorSpace,cooperative):job.type==='radiance'?decodeRadiance(job.buffer):job.source;
   const projection=job.viewport?await projectionPixels(source,job.viewport,cooperative):undefined;
   return job.type==='resize'?{projection}:{source,projection};
 }
 
 export const pixelWorkerSource=`
 const f32=new Float32Array(1),u32=new Uint32Array(f32.buffer);
-${[AreaResampler,decodeRadiance,srgbToLinear,toHalf,lanczos2,lanczosAxis,filterLanczosRows,linearPixels,halfPixels,lanczosPixels,projectionPixelsSize,projectionPixels,pixelJob].map(fn=>`const ${fn.name}=${fn.toString()};`).join('\n')}
+${[AreaResampler,decodeRadiance,srgbToLinear,toHalf,lanczos2,lanczosAxis,filterLanczosRows,linearPixels,gainMapPixels,halfPixels,lanczosPixels,projectionPixelsSize,projectionPixels,pixelJob].map(fn=>`const ${fn.name}=${fn.toString()};`).join('\n')}
 onmessage=async({data:{id,job}})=>{
   try{const result=await pixelJob(job),buffers=[];if(result.source)buffers.push(result.source.data.buffer);if(result.projection)buffers.push(result.projection.data.buffer);postMessage({id,result},buffers);}
   catch(error){postMessage({id,error:error.message});}
@@ -115,6 +129,11 @@ export async function processImagePixels(pixels,width,height,colorSpace,viewport
 
 export async function processRadiancePixels(buffer,viewport){
   const {source,projection}=await runPixelJob({type:'radiance',buffer,viewport});source.preparedProjection=projection;return source;
+}
+
+export async function processGainMapPixels(pixels,gains,width,height,colorSpace,metadata,viewport){
+  const {source,projection}=await runPixelJob({type:'gainmap',pixels,gains,width,height,colorSpace,metadata,viewport});
+  source.preparedProjection=projection;return source;
 }
 
 export async function prepareImageProjection(source,viewport){

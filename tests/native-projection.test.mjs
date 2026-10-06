@@ -39,24 +39,48 @@ test('native HDR exposure peaks during entry and returns continuously to the unc
     let previous=1;
     for(let ms=end;ms<=duration;ms++){
       const opacity=nativeExposureOpacity(at(ms));assert.ok(opacity<=previous);previous=opacity;
-      assert.ok(Math.abs(1+opacity*(EXPOSURE_PEAK-1)-at(ms).boost)<1e-12);
+      const envelope=(at(ms).boost-1)/(EXPOSURE_PEAK-1);
+      assert.ok(Math.abs(1+opacity-2**envelope)<1e-12);
     }
   }
 });
 
-test('HDR exposure initializes one float pixel on the existing GPU device without decoding or uploading a photo',async()=>{
-  const original=Object.getOwnPropertyDescriptor(globalThis,'document'),canvas=element();canvas.dataset={};canvas.setAttribute=()=>{};
-  let configuration,shader,draws=0,submissions=0;const context={configure(value){configuration=value;},getConfiguration(){return configuration;},getCurrentTexture(){return{createView(){return{};}};}};
-  canvas.getContext=()=>context;globalThis.document={createElement:()=>canvas};
-  const device={createShaderModule(value){shader=value.code;return{};},async createRenderPipelineAsync(){return{};},createCommandEncoder(){return{beginRenderPass(){return{setPipeline(){},draw(value){assert.equal(value,3);draws++;},end(){}};},finish(){return{};}};},queue:{submit(){submissions++;},async onSubmittedWorkDone(){}}};
+test('HDR entry exposure uses stops independently of the SDR peak and recovers monotonically',()=>{
+  const halfway={boost:1+(EXPOSURE_PEAK-1)*.5};
+  for(const ev of [.5,1,1.5,2]){
+    const opacity=nativeExposureOpacity(halfway,false,ev);
+    assert.ok(Math.abs(1+opacity*(2**ev-1)-2**(ev*.5))<1e-12);
+    assert.equal(nativeExposureOpacity({boost:EXPOSURE_PEAK},false,ev),1);
+    assert.equal(nativeExposureOpacity({boost:1},false,ev),0);
+  }
+  assert.equal(nativeExposureOpacity(halfway,false,0),0);
+});
+
+test('HDR exposure preparation requires a supported floating HDR device',async()=>{
+  const projection=new NativeProjection(element(),element());
+  await projection.initExposure({mode:'webgl',hdrSupported:false});
+  assert.equal(await projection.prepareExposure({hdr:true},{width:720,height:480}),null);
+  const renderer={mode:'webgpu',hdrSupported:true};await projection.initExposure(renderer);
+  assert.equal(projection.exposureRenderer,renderer);assert.equal(await projection.prepareExposure(null,{}),null);
+});
+
+test('HDR photo exposure is uploaded before transport, keeps current/staged textures and releases bounded resources',async()=>{
+  const descriptors=new Map(['document','GPUBufferUsage','GPUTextureUsage','devicePixelRatio'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
+  let uploads=0,destroyedTextures=0,destroyedBuffers=0,submits=0,lastUniform;
+  const device={createBuffer(){return{destroy(){destroyedBuffers++;}};},createTexture(){return{createView(){return{};},destroy(){destroyedTextures++;}};},createBindGroup(){return{};},queue:{writeTexture(){uploads++;},writeBuffer(buffer,offset,data){lastUniform=data;},submit(){submits++;},async onSubmittedWorkDone(){}},createCommandEncoder(){return{beginRenderPass(){return{setPipeline(){},setBindGroup(){},draw(){},end(){}};},finish(){return{};}};}};
+  globalThis.document={createElement(){const canvas=element();Object.assign(canvas,{dataset:{},width:1,height:1,setAttribute(){},remove(){},getContext(){return{configure(config){assert.equal(config.toneMapping.mode,'extended');},unconfigure(){},getCurrentTexture(){return{createView(){return{};}};}};}});return canvas;}};
+  globalThis.GPUBufferUsage={UNIFORM:1,COPY_DST:2};globalThis.GPUTextureUsage={TEXTURE_BINDING:1,COPY_DST:2};globalThis.devicePixelRatio=2;
   try{
-    const motion=element();motion.append=value=>{assert.equal(value,canvas);};const projection=new NativeProjection(element(),motion);
-    await projection.initExposure({mode:'webgpu',hdrSupported:true,device});
-    assert.equal(projection.exposure,canvas);assert.equal(canvas.width,1);assert.equal(canvas.height,1);assert.equal(configuration.device,device);
-    assert.equal(configuration.format,'rgba16float');assert.equal(configuration.toneMapping.mode,'extended');assert.equal(canvas.style.mixBlendMode,'multiply');assert.equal(canvas.style.filter,undefined);
-    assert.ok(shader.includes(String(1.055*Math.pow(EXPOSURE_PEAK,1/2.4)-.055)));assert.equal(draws,1);assert.equal(submissions,1);
-    projection.activate(true);projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.equal(draws,1);assert.equal(submissions,1);
-  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document;}
+    const motion=element();motion.append=()=>{};const projection=new NativeProjection(element(),motion);
+    await projection.initExposure({mode:'webgpu',hdrSupported:true,device,pipeline:{getBindGroupLayout(){return{};}},sampler:{}});
+    const source=()=>({data:new Float32Array([4,2,1,1]),width:1,height:1,hdr:true,colorSpace:'srgb'});
+    const current=await projection.prepareExposure(source(),{width:720,height:480});projection.activate(true,current);
+    assert.equal(current.canvas.width,1440);assert.equal(current.renderer.params.boost,2);assert.equal(current.canvas.style.mixBlendMode,undefined);
+    for(let i=0;i<8;i++){await projection.prepareExposure(source(),{width:720,height:480});assert.ok(projection.exposureLayers.size<=3);assert.ok([...projection.exposureLayers.values()].includes(current));}
+    const before={uploads,submits};projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.deepEqual({uploads,submits},before);
+    projection.setExposureEV(.5);assert.ok(Math.abs(lastUniform[0]-Math.sqrt(2))<1e-6);
+    projection.clearExposures();assert.equal(projection.exposureLayers.size,0);assert.equal(destroyedTextures,9);assert.equal(destroyedBuffers,9);
+  }finally{for(const [key,value]of descriptors){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
 });
 
 test('native exposure shares the transport clock and is neutral on reset, SDR selection and deactivation',()=>{

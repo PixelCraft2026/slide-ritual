@@ -4,6 +4,7 @@ import { ProjectorScene, WallLight } from '../../scene.js';
 import { AirLight } from '../../atmosphere.js';
 import { NativeProjection } from '../../native-projection.js';
 import * as timing from '../../transition.js';
+import { translate } from '../../i18n.js';
 
 // Execute the app's actual preparation/swap/RAF functions. Browser surfaces are
 // spies: this qualifies work placement and render counts, not GPU time or FPS.
@@ -19,7 +20,7 @@ export async function transportHarness(options={}){
   function element(id){
     if(elements.has(id))return elements.get(id);
     const style=new Proxy({getPropertyValue(name){return this[name]||'';},setProperty(name,value){if(critical()&&name==='dynamic-range-limit')metrics.nativeStyleDuringTransport++;this[name]=value;}},{set(target,name,value){if(critical()&&name==='clipPath'&&String(value).startsWith('inset'))metrics.clipMasksDuringTransport++;if(critical()&&name==='filter')metrics.nativeStyleDuringTransport++;target[name]=value;return true;}});
-    const el={id,style,dataset:{},classList:{add(){},remove(){},toggle(){}},hidden:false,value:'1',setAttribute(){},removeAttribute(){},prepend(){},replaceWith(next){this.replacement=next;},replaceChildren(){},append(){},addEventListener(){},scrollIntoView(){},querySelector(){return element(`${id}-span`);},querySelectorAll(){return[];}};
+    const el={id,style,dataset:{},classList:{add(){},remove(){},toggle(){}},hidden:false,value:'1',setAttribute(){},removeAttribute(){},prepend(){},replaceWith(next){this.replacement=next;},replaceChildren(){},remove(){},append(){},addEventListener(){},scrollIntoView(){},querySelector(){return element(`${id}-span`);},querySelectorAll(){return[];}};
     if(options.animations!==false)el.animate=(keyframes,settings)=>{const animation={keyframes,settings,currentTime:0,cancel(){metrics.animations.delete(this);}};metrics.animations.add(animation);metrics.animationStarts++;return animation;};
     if(id==='native')Object.defineProperty(el,'src',{set(){if(critical())metrics.nativeSrcDuringTransport++;}});
     Object.defineProperties(el,{clientWidth:dimension(id==='stage'||id==='room'?1440:528),clientHeight:dimension(id==='stage'||id==='room'?960:352)});
@@ -53,7 +54,7 @@ export async function transportHarness(options={}){
   const room=element('room'),screen=element('screen');element('photoY').value='-3';element('depth').value='4';element('focus').value='0';
   const nativeProjection=new NativeProjection(element('opticalGate'),element('filmMotion'),element('texture'));
   if(options.nativePhotos)nativeProjection.exposure=element('native-exposure');
-  env={$:element,room,screen,native:element('native'),nativeProjection,renderer:photo,scene,wall,air,machineLight,decodeImage:options.decodeImage||decodeImage,state:{slides,index:0,on:true,auto:false,busy:false,importing:false,demo:false,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:true,ready:true,aperture:false},cache:new Map(),hdrQuery:{matches:Boolean(options.nativePhotos)},reduceMotion:{matches:false},exposure:1,transporting:false,layoutPending:false,projectionWidth:528,autoTimer:null,transitionFrame:null,finishTransition:null,toastTimer:null,hideTimer:null,powerIcon:'',audio:{advance(){},stopAdvance(){},stopFan(){}},mountProjection(){},showImmersiveControls(){},delay:async()=>{},setTimeout:()=>0,clearTimeout(){},...timing};
+  env={$:element,t:(key,params)=>translate(key,'zh-CN',params),room,screen,native:element('native'),nativeProjection,renderer:photo,scene,wall,air,machineLight,decodeImage:options.decodeImage||decodeImage,state:{slides,index:0,on:true,auto:false,busy:false,importing:false,demo:false,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:true,ready:true,aperture:false},cache:new Map(),hdrQuery:{matches:Boolean(options.nativePhotos)},reduceMotion:{matches:false},exposure:1,transporting:false,layoutPending:false,projectionWidth:528,autoTimer:null,transitionFrame:null,finishTransition:null,toastTimer:null,hideTimer:null,powerIcon:'',audio:{advance(){},stopAdvance(){},stopFan(){}},mountProjection(){},showImmersiveControls(){},delay:async()=>{},setTimeout:()=>0,clearTimeout(){},...timing};
   const functions=text.slice(text.indexOf('function toast('),text.indexOf('async function importFiles('));
   const api=new Function('env',`with(env){${functions}\nreturn{goTo,fitScreen,present,resetTransition,preparePresentation:typeof preparePresentation==='function'?preparePresentation:null};}`)(env);
   const width=1200,height=800,data=new Float32Array(width*height*4);data.fill(.25);for(let i=3;i<data.length;i+=4)data[i]=1;

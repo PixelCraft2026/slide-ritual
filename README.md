@@ -18,13 +18,15 @@ A browser-based photo viewer inspired by the **Leica P150** slide projector. War
 
 ## Start watching
 
-Open the [online viewer](https://pixelcraft2026.github.io/slide-ritual/), choose **文件夹** (Folder), or click **先看示例** (Try the examples). The interface is currently in Simplified Chinese.
+Open the [online viewer](https://pixelcraft2026.github.io/slide-ritual/), choose **Folder**, or click **Try the demo**. English and Simplified Chinese follow your system language; you can switch languages in settings.
 
-Foreground blur defaults to **2.0 on touch devices** and **4.0 on desktop**. If your mobile browser does not support folder selection, open settings and choose **也可以选择单张照片** (Select individual photos).
+Foreground blur defaults to **2.0 on touch devices** and **4.0 on desktop**. If your mobile browser does not support folder selection, open settings and choose **Or choose individual photos**.
 
 Use **← / →** to change photographs, **Space** to play or pause, **F** for fullscreen, **M** for sound, and **P** for power.
 
 JPEG, PNG, WebP, and AVIF support depends on browser decoding. HDR output requires a compatible display, system settings, and browser; otherwise, the viewer uses SDR.
+
+On compatible WebGPU HDR browsers, Adobe gain-map JPEGs briefly brighten during entry using a reconstructed HDR preview, then return to the original native HDR image. **Lighting → HDR entry exposure** adjusts the effect from 0 to +2 EV (default +1 EV). Other native HDR formats retain browser rendering.
 
 ## Run locally
 

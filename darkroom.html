@@ -33,6 +33,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
 :root{--foreground-blur:4px;--projector-y:5vh;--projection-center:34%}
 .aperture-window,.screen-glow,.lamp-aperture{top:var(--projection-center)}
 @media(max-width:600px){:root{--projection-center:37%}}
+.language-setting{justify-content:space-between;gap:8px}.language-setting>span{flex-shrink:0}.language-setting select{min-width:0}
 </style></head>
 <body><main id="room" class="room off interacting">
   <canvas id="wallLight" aria-hidden="true"></canvas><div class="wall-grain" aria-hidden="true"></div>
@@ -66,6 +67,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
       <label class="setting"><span>镜头对焦 <output id="focusValue">清晰</output></span><input id="focus" type="range" min="0" max="3" step="0.05" value="0"></label>
       <label class="setting"><span>前景虚焦 <output id="depthValue">4.0</output></span><input id="depth" type="range" min="1" max="9" step="0.1" value="4"></label>
       <details id="lightingSettings" class="position-settings"><summary>光照设置</summary>
+      <label class="setting"><span>HDR 入场曝光 <output id="hdrEntryEVValue">+1.0 EV</output></span><input id="hdrEntryEV" aria-label="HDR 入场曝光" type="range" min="0" max="2" step="0.1" value="1"></label>
       <label class="setting"><span>墙面散射 <output id="diffusionValue">100%</output></span><input id="diffusion" type="range" min="0" max="1.8" step="0.01" value="1"></label>
       <label class="setting"><span>空气散射 <output id="airAmountValue">140%</output></span><input id="airAmount" aria-label="空气散射" type="range" min="0" max="5" step="0.05" value="1.4"></label>
       <label class="setting"><span>泛光强度 <output id="bloomValue">30%</output></span><input id="bloom" aria-label="泛光强度" type="range" min="0" max="1" step="0.05" value="0.3"></label>
@@ -86,6 +88,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
       <label class="setting"><span>风扇底噪 <output id="fanVolumeValue">18%</output></span><input id="fanVolume" aria-label="风扇底噪" type="range" min="0" max="1" step="0.01" value="0.18"></label>
       <label class="setting"><span>每张停留 <output id="intervalValue">4 秒</output></span><input id="interval" aria-label="每张停留" type="range" min="2" max="30" step="0.5" value="4"></label>
       <label class="setting select-setting"><span>显示模式</span><select id="displayMode"><option value="auto">自动 · 优先 HDR</option><option value="sdr">SDR</option></select></label>
+      <label class="setting select-setting language-setting"><span>语言 / Language</span><select id="language" aria-label="语言 / Language"><option value="auto">跟随系统</option><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
       <label class="setting" id="highlightSetting"><span>SDR 高光扩展 <output id="highlightValue">2.0×</output></span><input id="highlight" type="range" min="1" max="4" step="0.1" value="2"></label>
       <label class="check-setting"><input id="loop" type="checkbox" checked><span>循环放映</span></label>
       <div class="display-info"><button id="rangeBadge" class="range-badge"><i></i><span>检测显示环境</span></button><small id="displayInfo"></small></div>
@@ -330,6 +333,20 @@ async function halfPixels(data,cooperative=false){
   return half;
 }
 
+async function gainMapPixels(pixels,gains,width,height,colorSpace,metadata,cooperative=false){
+  if(pixels.length!==width*height*4||gains.length!==pixels.length)throw new Error('Invalid gain map dimensions');
+  const source=await linearPixels(pixels,width,height,colorSpace,cooperative),tables=metadata.minimum.map((min,c)=>Float32Array.from({length:256},(_,v)=>2**(min+(metadata.maximum[c]-min)*(v/255)**(1/metadata.gamma[c]))));
+  let peak=0;
+  for(let start=0;start<source.data.length;start+=262144){
+    const end=Math.min(source.data.length,start+262144);
+    for(let i=start;i<end;i+=4)for(let c=0;c<3;c++){
+      const value=Math.max(0,(source.data[i+c]+metadata.offsetSDR[c])*tables[c][gains[i+c]]-metadata.offsetHDR[c]);source.data[i+c]=value;peak=Math.max(peak,value);
+    }
+    if(cooperative&&end<source.data.length)await yieldPixelWork();
+  }
+  source.hdr=true;source.peak=peak;return source;
+}
+
 async function lanczosPixels(data,sourceWidth,sourceHeight,width,height,cooperative=false){
   let horizontal=data;
   if(width!==sourceWidth){
@@ -354,14 +371,14 @@ async function projectionPixels(source,viewport,cooperative=false){
 }
 
 async function pixelJob(job,cooperative=false){
-  const source=job.type==='decode'?await linearPixels(job.pixels,job.width,job.height,job.colorSpace,cooperative):job.type==='radiance'?decodeRadiance(job.buffer):job.source;
+  const source=job.type==='gainmap'?await gainMapPixels(job.pixels,job.gains,job.width,job.height,job.colorSpace,job.metadata,cooperative):job.type==='decode'?await linearPixels(job.pixels,job.width,job.height,job.colorSpace,cooperative):job.type==='radiance'?decodeRadiance(job.buffer):job.source;
   const projection=job.viewport?await projectionPixels(source,job.viewport,cooperative):undefined;
   return job.type==='resize'?{projection}:{source,projection};
 }
 
 const pixelWorkerSource=`
 const f32=new Float32Array(1),u32=new Uint32Array(f32.buffer);
-${[AreaResampler,decodeRadiance,srgbToLinear,toHalf,lanczos2,lanczosAxis,filterLanczosRows,linearPixels,halfPixels,lanczosPixels,projectionPixelsSize,projectionPixels,pixelJob].map(fn=>`const ${fn.name}=${fn.toString()};`).join('\n')}
+${[AreaResampler,decodeRadiance,srgbToLinear,toHalf,lanczos2,lanczosAxis,filterLanczosRows,linearPixels,gainMapPixels,halfPixels,lanczosPixels,projectionPixelsSize,projectionPixels,pixelJob].map(fn=>`const ${fn.name}=${fn.toString()};`).join('\n')}
 onmessage=async({data:{id,job}})=>{
   try{const result=await pixelJob(job),buffers=[];if(result.source)buffers.push(result.source.data.buffer);if(result.projection)buffers.push(result.projection.data.buffer);postMessage({id,result},buffers);}
   catch(error){postMessage({id,error:error.message});}
@@ -404,6 +421,11 @@ async function processImagePixels(pixels,width,height,colorSpace,viewport){
 
 async function processRadiancePixels(buffer,viewport){
   const {source,projection}=await runPixelJob({type:'radiance',buffer,viewport});source.preparedProjection=projection;return source;
+}
+
+async function processGainMapPixels(pixels,gains,width,height,colorSpace,metadata,viewport){
+  const {source,projection}=await runPixelJob({type:'gainmap',pixels,gains,width,height,colorSpace,metadata,viewport});
+  source.preparedProjection=projection;return source;
 }
 
 async function prepareImageProjection(source,viewport){
@@ -1301,7 +1323,14 @@ class MachineLight {
 
 
 
-function nativeExposureOpacity(frame,reduced=false){return reduced?0:Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));}
+
+const DEFAULT_HDR_ENTRY_EV=1;
+function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
+  if(reduced||ev<=0)return 0;
+  const envelope=Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));
+  // Map the recovery in exposure stops to the pre-rendered HDR peak layer.
+  return (2**(ev*envelope)-1)/(2**ev-1);
+}
 
 // A translated fixed clip and an opposite translation of its contents produce
 // the same wipe as inset(0, clipRight, 0, 0), without animating a paint mask.
@@ -1309,7 +1338,7 @@ function nativeWipe(frame){
   return{gate:`translate3d(${(frame.shift-frame.clipRight)*100}%,0,0)`,contents:`translate3d(${frame.clipRight*100}%,0,0)`};
 }
 
-function nativeKeyframes(opening=false,reduced=false){
+function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS,at=opening?startupAt:transitionAt;
   const times=new Set([0,duration,...(opening?[200,1000,1300]:[133,600,967,1167])]);
   for(let ms=1000/120;ms<duration;ms+=1000/120)times.add(ms);
@@ -1318,14 +1347,14 @@ function nativeKeyframes(opening=false,reduced=false){
     const frame=at(ms);if(reduced)frame.shift=0;
     const wipe=nativeWipe(frame),offset=ms/duration;
     gate.push({offset,transform:wipe.gate});contents.push({offset,transform:wipe.contents});
-    exposure.push({offset,opacity:nativeExposureOpacity(frame,reduced)});
+    exposure.push({offset,opacity:nativeExposureOpacity(frame,reduced,ev)});
   }
   return{duration,gate,contents,exposure};
 }
 
 class NativeProjection {
   constructor(gate,motion,texture){
-    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;
+    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;this.exposureEV=DEFAULT_HDR_ENTRY_EV;
     if(globalThis.document?.body){
       this.staging=document.createElement('div');this.staging.hidden=true;
       Object.assign(this.staging.style,{position:'fixed',left:'0',top:'0',clipPath:'inset(0 calc(100% - 1px) calc(100% - 1px) 0)',pointerEvents:'none',zIndex:'8',contain:'layout paint'});
@@ -1335,31 +1364,55 @@ class NativeProjection {
     }
   }
   async initExposure(renderer){
-    if(renderer.mode!=='webgpu'||!renderer.hdrSupported||!globalThis.document)return;
-    // A single HDR pixel supplies the multiplier. The browser keeps decoding
-    // the original gain-map image; no image filter or duplicate photo is used.
-    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;canvas.hidden=true;
-    Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none',mixBlendMode:'multiply',opacity:'0',willChange:'opacity'});
-    canvas.style.setProperty('dynamic-range-limit','no-limit');canvas.setAttribute('aria-hidden','true');canvas.dataset.nativeExposure='hdr';
-    let context;
+    if(renderer.mode==='webgpu'&&renderer.hdrSupported)this.exposureRenderer=renderer;
+  }
+  async prepareExposure(source,layout){
+    if(!source||!this.exposureRenderer)return null;
+    this.exposureLayers??=new Map();let resource=this.exposureLayers.get(source);
     try{
-      const device=renderer.device;context=canvas.getContext('webgpu');
-      context.configure({device,format:'rgba16float',alphaMode:'opaque',colorSpace:'display-p3',toneMapping:{mode:'extended'}});
-      if(context.getConfiguration?.().toneMapping?.mode!=='extended'){context.unconfigure?.();return;}
-      const value=1.055*Math.pow(EXPOSURE_PEAK,1/2.4)-.055;
-      const module=device.createShaderModule({code:`@vertex fn vs(@builtin(vertex_index) i:u32)->@builtin(position) vec4f {let x=f32((i<<1u)&2u);let y=f32(i&2u);return vec4f(x*2.-1.,1.-y*2.,0.,1.);}@fragment fn fs()->@location(0) vec4f{return vec4f(${value},${value},${value},1.);}`});
-      const pipeline=await device.createRenderPipelineAsync({layout:'auto',vertex:{module,entryPoint:'vs'},fragment:{module,entryPoint:'fs',targets:[{format:'rgba16float'}]},primitive:{topology:'triangle-list'}});
-      const encoder=device.createCommandEncoder(),pass=encoder.beginRenderPass({colorAttachments:[{view:context.getCurrentTexture().createView(),loadOp:'clear',storeOp:'store',clearValue:{r:0,g:0,b:0,a:1}}]});
-      pass.setPipeline(pipeline);pass.draw(3);pass.end();device.queue.submit([encoder.finish()]);await device.queue.onSubmittedWorkDone();
-      this.exposure=canvas;this.motion.append(canvas);
-    }catch{context?.unconfigure?.();} // Keep native HDR intact if float compositing is unavailable.
+      if(!resource){
+        const canvas=document.createElement('canvas');
+        Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none',opacity:'0',willChange:'opacity'});
+        canvas.style.setProperty('dynamic-range-limit','no-limit');canvas.setAttribute('aria-hidden','true');canvas.dataset.nativeExposure='hdr';
+        const renderer=new ProjectionRenderer(canvas),shared=this.exposureRenderer;
+        Object.assign(renderer,{mode:'webgpu',device:shared.device,pipeline:shared.pipeline,sampler:shared.sampler,hdr:true,hdrSupported:true,configuredHDR:true});
+        renderer.params.texture=0;
+        resource={canvas,renderer,source};this.exposureLayers.set(source,resource);
+        renderer.gpu=canvas.getContext('webgpu');renderer.gpu.configure({device:renderer.device,format:'rgba16float',alphaMode:'opaque',colorSpace:'display-p3',toneMapping:{mode:'extended'}});
+        const configuration=renderer.gpu.getConfiguration?.();if(configuration&&configuration.toneMapping?.mode!=='extended')throw new Error('Extended HDR canvas unavailable');
+        renderer.uniform=renderer.device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+      }
+      const dpr=Math.min(globalThis.devicePixelRatio||1,2),viewport={width:Math.max(1,Math.round(layout.width*dpr)),height:Math.max(1,Math.round(layout.height*dpr))};
+      if(resource.canvas.width!==viewport.width)resource.canvas.width=viewport.width;
+      if(resource.canvas.height!==viewport.height)resource.canvas.height=viewport.height;
+      resource.canvas.hidden=false;
+      resource.renderer.params.boost=2**this.exposureEV;
+      // Render the actual HDR pixels at peak exposure once before transport.
+      // Entry/settling animate only this layer's opacity over the native image.
+      await resource.renderer.stage(source,viewport);resource.renderer.upload(source,viewport);await resource.renderer.device.queue.onSubmittedWorkDone();
+      this.stagedExposure=resource;
+      for(const [key,value]of this.exposureLayers)if(this.exposureLayers.size>3&&value!==this.activeExposure&&value!==resource){this.exposureLayers.delete(key);this.releaseExposure(value);}
+      return resource;
+    }catch{if(resource&&resource!==this.activeExposure){this.exposureLayers.delete(source);this.releaseExposure(resource);}return null;}
+  }
+  releaseExposure(resource){
+    for(const value of resource.renderer.textureSources?.values()||[])value.texture.destroy();
+    resource.renderer.uniform?.destroy();resource.renderer.gpu?.unconfigure();resource.canvas.remove();
+  }
+  clearExposures(){
+    this.cancel();for(const resource of this.exposureLayers?.values()||[])this.releaseExposure(resource);
+    this.exposureLayers?.clear();this.activeExposure=this.stagedExposure=this.exposure=null;
+  }
+  setExposureEV(value){
+    this.exposureEV=Math.max(0,Math.min(2,Number.isFinite(value)?value:DEFAULT_HDR_ENTRY_EV));
+    if(this.activeExposure){this.activeExposure.renderer.params.boost=2**this.exposureEV;this.activeExposure.renderer.draw();}
   }
   setHDR(hdr){
     const changed=this.hdr!==hdr;this.hdr=hdr;
     if(this.exposure){this.exposure.hidden=!this.active||!hdr;if(!hdr)this.exposure.style.opacity='0';}
     if(changed&&this.active&&this.transport)this.play();
   }
-  async prepare(image,layout,{hdr=false,displayMode='auto',brightness=1,focus=0,boost=1}={}){
+  async prepare(image,layout,{hdr=false,displayMode='auto',brightness=1,focus=0,boost=1,exposure=null}={}){
     const ticket=this.prepareTicket=(this.prepareTicket||0)+1;
     // Reuse this decoded <img> at the swap. Assigning the URL to a different
     // display node at that point leaves its first native HDR paint until entry.
@@ -1377,13 +1430,19 @@ class NativeProjection {
       // opaque, so opacity-dependent tone mapping cannot skip its gain map.
       image.removeAttribute('id');image.hidden=false;
       Object.assign(this.staging.style,{width:`${layout.width}px`,height:`${layout.height}px`});
-      this.staging.replaceChildren(image,this.cover);this.staging.hidden=false;
+      if(exposure)exposure.canvas.style.opacity='1';
+      this.staging.replaceChildren(image,...(exposure?[exposure.canvas]:[]),this.cover);this.staging.hidden=false;
       for(let frame=0;frame<4;frame++)await new Promise(resolve=>requestAnimationFrame(resolve));
     }
     return image;
   }
   promote(){for(const element of [this.gate,this.motion,this.texture])if(element)element.style.willChange='transform';}
-  activate(hdr=false){
+  activate(hdr=false,exposure){
+    if(exposure!==undefined){
+      if(this.exposure&&this.exposure!==exposure?.canvas)this.exposure.remove();
+      this.activeExposure=exposure;this.stagedExposure=null;this.exposure=exposure?.canvas;
+      if(this.exposure){this.exposure.style.opacity='0';this.motion.append(this.exposure);}
+    }
     this.hdr=hdr;
     this.active=true;this.promote();this.gate.style.clipPath='none';this.clearStaging();
     if(this.exposure)this.exposure.hidden=!hdr;
@@ -1399,7 +1458,7 @@ class NativeProjection {
   play(){
     this.cancel();
     if(![this.gate,this.motion,this.texture].filter(Boolean).every(element=>typeof element.animate==='function'))return;
-    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced),options={duration:frames.duration,fill:'both',easing:'linear'};
+    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced,this.exposureEV),options={duration:frames.duration,fill:'both',easing:'linear'};
     try{
       for(const [element,keyframes]of [[this.gate,frames.gate],[this.motion,frames.contents],[this.texture,frames.contents]])if(element)this.animations.push(element.animate(keyframes,options));
       if(this.hdr&&this.exposure)this.animations.push(this.exposure.animate(frames.exposure,options));
@@ -1411,11 +1470,207 @@ class NativeProjection {
     if(!this.active||this.animations.length)return;
     const wipe=nativeWipe(frame);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
     if(this.texture)this.texture.style.transform=wipe.contents;
-    if(this.exposure)this.exposure.style.opacity=String(this.hdr?nativeExposureOpacity(frame,this.transport?.reduced):0);
+    if(this.exposure)this.exposure.style.opacity=String(this.hdr?nativeExposureOpacity(frame,this.transport?.reduced,this.exposureEV):0);
   }
   cancel(){for(const animation of this.animations)animation.cancel();this.animations=[];if(this.exposure)this.exposure.style.opacity='0';}
   clearStaging(){this.prepareTicket=(this.prepareTicket||0)+1;if(this.staging){this.staging.hidden=true;this.staging.replaceChildren();}}
   reset(){this.transport=null;this.cancel();this.clearStaging();if(this.active)this.frame({shift:0,clipRight:0});}
+}
+
+
+
+function jpegHeaders(bytes,start=0){
+  if(bytes[start]!==255||bytes[start+1]!==216)return null;
+  const segments=[];let p=start+2;
+  while(p+4<=bytes.length){
+    if(bytes[p++]!==255)return null;while(bytes[p]===255)p++;
+    const marker=bytes[p++];if(marker===218||marker===217)return segments;
+    const length=(bytes[p]<<8)|bytes[p+1];if(length<2||p+length>bytes.length)return null;
+    segments.push({marker,start:p-2,data:p+2,end:p+length});p+=length;
+  }
+  return null;
+}
+function mpfImages(bytes,segment){
+  const start=segment.data+4,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length),little=bytes[start]===73&&bytes[start+1]===73;
+  if(!little&&!(bytes[start]===77&&bytes[start+1]===77))return null;
+  const u16=p=>view.getUint16(p,little),u32=p=>view.getUint32(p,little);
+  if(u16(start+2)!==42)return null;const ifd=start+u32(start+4);if(ifd+2>segment.end)return null;
+  const count=u16(ifd);if(count>64||ifd+2+count*12>segment.end)return null;
+  for(let i=0;i<count;i++){
+    const p=ifd+2+i*12;if(u16(p)!==0xb002)continue;
+    const size=u32(p+4),table=start+u32(p+8);if(size<32||size%16||table+size>segment.end)return null;
+    return[{start:0,length:u32(table+4)},{start:start+u32(table+24),length:u32(table+20)}];
+  }
+  return null;
+}
+function xmp(bytes,headers){return headers.filter(s=>s.marker===225).map(s=>new TextDecoder().decode(bytes.subarray(s.data,s.end))).filter(s=>s.includes('http://ns.adobe.com/hdr-gain-map/1.0/')).join('\n');}
+function field(text,name){
+  const attribute=text.match(new RegExp(`hdrgm:${name}\\s*=\\s*["']([^"']+)["']`));if(attribute)return attribute[1];
+  const element=text.match(new RegExp(`<hdrgm:${name}[^>]*>([\\s\\S]*?)</hdrgm:${name}>`));if(!element)return;
+  const items=[...element[1].matchAll(/<rdf:li[^>]*>([^<]+)<\/rdf:li>/g)];return items.length?items.map(x=>x[1]):element[1].trim();
+}
+function channels(text,name,fallback){
+  const raw=field(text,name)??fallback,values=(Array.isArray(raw)?raw:[raw]).map(Number);
+  if(values.length!==1&&values.length!==3||values.some(v=>!Number.isFinite(v)))return null;
+  return values.length===1?[values[0],values[0],values[0]]:values;
+}
+function profileSpace(bytes,headers){
+  const segments=headers.filter(s=>s.marker===226&&new TextDecoder().decode(bytes.subarray(s.data,s.data+12))==='ICC_PROFILE\0').sort((a,b)=>bytes[a.data+12]-bytes[b.data+12]);
+  if(!segments.length)return'srgb';
+  if(segments.some((s,i)=>s.end-s.data<14||bytes[s.data+12]!==i+1||bytes[s.data+13]!==segments.length))return null;
+  const profile=new Uint8Array(segments.reduce((n,s)=>n+s.end-s.data-14,0));let offset=0;
+  for(const s of segments){profile.set(bytes.subarray(s.data+14,s.end),offset);offset+=s.end-s.data-14;}
+  if(profile.length<132)return null;const view=new DataView(profile.buffer),count=view.getUint32(128);if(count>128||132+count*12>profile.length)return null;
+  const primaries=[];
+  for(const tag of ['rXYZ','gXYZ','bXYZ']){
+    let values;
+    for(let i=0;i<count;i++){const p=132+i*12;if(new TextDecoder().decode(profile.subarray(p,p+4))!==tag)continue;const at=view.getUint32(p+4);if(at+20>profile.length)return null;values=[0,1,2].map(c=>view.getInt32(at+8+c*4)/65536);break;}
+    if(!values)return null;primaries.push(...values);
+  }
+  for(const [space,matrix]of [['srgb',[.436075,.222505,.013932,.385065,.716879,.097105,.14308,.060617,.714173]],['display-p3',[.515102,.241182,-.001049,.291965,.692236,.041882,.157153,.066582,.784378]]])if(primaries.every((value,i)=>Math.abs(value-matrix[i])<.003))return space;
+  return null;
+}
+function orientation(bytes,headers){
+  const exif=headers.find(s=>s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.data+6))==='Exif\0\0');if(!exif)return 1;
+  try{const start=exif.data+6,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length),little=bytes[start]===73,ifd=start+view.getUint32(start+4,little),count=view.getUint16(ifd,little);if(count>256||ifd+2+count*12>exif.end)return 0;
+    for(let i=0;i<count;i++){const p=ifd+2+i*12;if(view.getUint16(p,little)===274)return view.getUint16(p+8,little);}return 1;
+  }catch{return 0;}
+}
+
+// Adobe HDR Gain Map 1.0 in JPEG/MPF. Unsupported profiles and metadata retain
+// the browser's native display path rather than fabricating HDR highlights.
+function readGainMapJPEG(bytes){
+  try{
+    const primary=jpegHeaders(bytes);if(!primary)return null;
+    const mpf=primary.find(s=>s.marker===226&&new TextDecoder().decode(bytes.subarray(s.data,s.data+4))==='MPF\0');if(!mpf)return null;
+    const images=mpfImages(bytes,mpf);if(!images||images.some(s=>s.length<4||s.start+s.length>bytes.length||bytes[s.start+s.length-2]!==255||bytes[s.start+s.length-1]!==217))return null;
+    const gain=jpegHeaders(bytes,images[1].start);if(!gain)return null;const text=xmp(bytes,primary)+'\n'+xmp(bytes,gain);
+    if(field(text,'Version')!=='1.0'||/^true$/i.test(field(text,'BaseRenditionIsHDR')||'False'))return null;
+    const minimum=channels(text,'GainMapMin',0),maximum=channels(text,'GainMapMax',1),gamma=channels(text,'Gamma',1),offsetSDR=channels(text,'OffsetSDR',1/64),offsetHDR=channels(text,'OffsetHDR',1/64);
+    if(!minimum||!maximum||!gamma||!offsetSDR||!offsetHDR||gamma.some(v=>v<=0||v>16)||minimum.some((v,i)=>v>maximum[i]||Math.abs(v)>16)||maximum.some(v=>Math.abs(v)>16)||[...offsetSDR,...offsetHDR].some(v=>v<0||v>1))return null;
+    const colorSpace=profileSpace(bytes,primary),rotate=orientation(bytes,primary);if(!colorSpace||rotate<1||rotate>8)return null;
+    // Remove only the gain-map metadata and MPF link from the temporary base
+    // decode. EXIF orientation and the original ICC profile are retained.
+    const excluded=primary.filter(s=>s===mpf||s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.end)).includes('http://ns.adobe.com/hdr-gain-map/1.0/'));
+    const pieces=[];let p=0;for(const s of excluded){pieces.push(bytes.subarray(p,s.start));p=s.end;}pieces.push(bytes.subarray(p,images[0].length));
+    return{base:pieces,gain:bytes.subarray(images[1].start,images[1].start+images[1].length),metadata:{minimum,maximum,gamma,offsetSDR,offsetHDR},colorSpace,orientation:rotate};
+  }catch{return null;}
+}
+
+async function decodeGainMapTransition(file,image,viewport){
+  if(!file||!/^image\/jpeg$/i.test(file.type)&&!/\.jpe?g$/i.test(file.name))return null;
+  const parsed=readGainMapJPEG(new Uint8Array(await file.arrayBuffer()));if(!parsed)return null;
+  let base,gain;
+  try{
+    // Decode a bounded preview at twice the output size, then filter the
+    // reconstructed linear HDR values with the same Lanczos2 pixel worker.
+    const scale=Math.min(1,viewport.width*2/image.naturalWidth,viewport.height*2/image.naturalHeight,Math.sqrt(3_000_000/(image.naturalWidth*image.naturalHeight)));
+    const width=Math.max(1,Math.round(image.naturalWidth*scale)),height=Math.max(1,Math.round(image.naturalHeight*scale));
+    const rotated=parsed.orientation>=5,rawWidth=rotated?height:width,rawHeight=rotated?width:height;
+    base=await createImageBitmap(new Blob(parsed.base,{type:'image/jpeg'}),{resizeWidth:width,resizeHeight:height,resizeQuality:'high'});
+    gain=await createImageBitmap(new Blob([parsed.gain],{type:'image/jpeg'}),{imageOrientation:'none',colorSpaceConversion:'none',resizeWidth:rawWidth,resizeHeight:rawHeight,resizeQuality:'high'});
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const context=canvas.getContext('2d',{colorSpace:parsed.colorSpace,willReadFrequently:true});context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';context.drawImage(base,0,0,width,height);
+    const pixels=context.getImageData(0,0,width,height).data;
+    const gainCanvas=document.createElement('canvas');gainCanvas.width=width;gainCanvas.height=height;
+    const gainContext=gainCanvas.getContext('2d',{colorSpace:'srgb',willReadFrequently:true});gainContext.imageSmoothingEnabled=true;gainContext.imageSmoothingQuality='high';
+    const transforms={1:[1,0,0,1,0,0],2:[-1,0,0,1,width,0],3:[-1,0,0,-1,width,height],4:[1,0,0,-1,0,height],5:[0,1,1,0,0,0],6:[0,1,-1,0,width,0],7:[0,-1,-1,0,width,height],8:[0,-1,1,0,0,height]};
+    gainContext.setTransform(...transforms[parsed.orientation]);gainContext.drawImage(gain,0,0,rawWidth,rawHeight);gainContext.resetTransform();const gains=gainContext.getImageData(0,0,width,height).data;
+    canvas.width=canvas.height=gainCanvas.width=gainCanvas.height=1;
+    return await processGainMapPixels(pixels,gains,width,height,parsed.colorSpace,parsed.metadata,viewport);
+  }catch{return null;}finally{base?.close();gain?.close();}
+}
+
+
+// Chinese source strings are the stable keys. User photo names are never translated.
+const english={
+  '暗室 · 幻灯放映':'Slide Ritual · Darkroom',
+  '墙上的投影':'Projection on the wall','当前照片的实时投影':'Live projection of the current photo',
+  '从后方观看的 Leica P150 幻灯机，前景虚焦，右侧为机械片匣':'Rear view of a Leica P150 projector, softly out of focus, with the slide tray on the right',
+  '放映控制':'Projection controls','悬浮控制栏':'Floating controls','选择照片文件夹':'Choose a photo folder',
+  '选择文件夹 · 自动放映':'Choose folder · Start slideshow','文件夹':'Folder','上一张照片':'Previous photo','上一张 · ←':'Previous · ←',
+  '自动放映':'Slideshow','暂停自动放映':'Pause slideshow','播放 / 暂停 · 空格':'Play / Pause · Space',
+  '下一张照片':'Next photo','下一张 · →':'Next · →','关闭机械声音':'Mute mechanical sounds','开启机械声音':'Enable mechanical sounds','声音 · M':'Sound · M',
+  '进入全屏':'Enter fullscreen','退出全屏':'Exit fullscreen','全屏 · F':'Fullscreen · F','放映设置':'Projection settings','设置':'Settings',
+  '开启幻灯机':'Turn projector on','关闭幻灯机':'Turn projector off','电源 · P':'Power · P',
+  '暗室 / 35 mm':'DARKROOM / 35 mm','选一个文件夹，':'Choose a folder,','让照片慢慢放映。':'let your photos unfold.',
+  '先看示例 →':'Try the demo →','先看示例':'Try the demo','重新开机 →':'Restart projector →','移动鼠标，唤回控制':'Move the pointer to show controls',
+  '关闭设置':'Close settings','画面大小':'Image size','灯光亮度':'Lamp brightness','镜头对焦':'Lens focus','前景虚焦':'Foreground blur',
+  '清晰':'Sharp','光照设置':'Lighting','HDR 入场曝光':'HDR entry exposure','墙面散射':'Wall diffusion','空气散射':'Air scattering','泛光强度':'Bloom intensity',
+  '顶盖反射':'Top cover reflection','机箱光源':'Housing lights','幻灯机位置':'Projector position','垂直位置':'Vertical position','俯仰角度':'Pitch angle',
+  '幻灯机垂直位置':'Projector vertical position','幻灯机俯仰角度':'Projector pitch angle','位置复位':'Reset position',
+  '幻灯片位置':'Slide position','幻灯片垂直位置':'Slide vertical position','幻灯片位置复位':'Reset slide position',
+  '下 5%':'Down 5%','下 3%':'Down 3%','基准':'Default','下 {value}%':'Down {value}%','上 {value}%':'Up {value}%',
+  '仰 {value}°':'Up {value}°','俯 {value}°':'Down {value}°',
+  '投影质感':'Projection texture','轻微':'Subtle','无':'None','适中':'Medium','明显':'Strong','机械声音':'Mechanical sounds',
+  '风扇底噪':'Fan ambience','每张停留':'Slide duration','4 秒':'4 seconds','{value} 秒':'{value} seconds',
+  '显示模式':'Display mode','自动 · 优先 HDR':'Auto · Prefer HDR','SDR 高光扩展':'SDR highlight boost',
+  '语言':'Language','跟随系统':'System default','循环放映':'Loop slideshow','检测显示环境':'Detecting display',
+  '片匣中的照片':'Photos in the slide tray','3 张照片':'3 photos','清空':'Clear','也可以选择单张照片':'Or choose individual photos',
+  '← → 过片 · 空格 播放 / 暂停':'← → Change slide · Space Play / Pause',
+  'F 全屏 · M 声音 · P 电源':'F Fullscreen · M Sound · P Power',
+  '照片只在本机处理。文件夹按文件名顺序放映，包含子文件夹。':'Photos stay on your device. Folders play in filename order, including subfolders.',
+  '待机':'Standby','松开，装入照片':'Drop to load photos','山间来信':'A letter from the mountains','林间的访客':'A woodland visitor','日落以前':'Before sunset',
+  'HDR · 原生预览':'HDR · Native preview','HDR · 已开启':'HDR · Enabled','SDR · 已开启':'SDR · Enabled',
+  'HDR 显示环境 · SDR 高光扩展已启用':'HDR display · SDR highlight boost enabled',
+  '已选择 SDR 显示':'SDR display selected','HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理':'HDR display · Native HDR photos are handled by your browser',
+  '当前显示环境为 SDR · HDR 照片自动映射':'SDR display · HDR photos are tone mapped',
+  '片匣为空':'Slide tray is empty','HDR 标记 · 浏览器解码':'HDR metadata · Browser decoding','示例照片 · {format}':'Demo photo · {format}',
+  '装片中':'Loading photos','过片中':'Changing slide','灯泡预热':'Warming the lamp','正在放映':'Projecting',
+  '/ 三张风景':'/ Three landscapes','/ {count} 张照片':'/ {count} photos','第 {index} 张：{name}':'Slide {index}: {name}',
+  '浏览器无法解码这张照片，请转换为 JPG、PNG、AVIF 或 .hdr':'Your browser cannot decode this photo. Convert it to JPG, PNG, AVIF or .hdr.',
+  '本次放映结束':'Slideshow finished','已是第一张':'This is the first photo','已是最后一张':'This is the last photo',
+  '无法放映：{error}':'Unable to project: {error}','这个文件夹中没有可放映的照片':'No supported photos in this folder',
+  '超过单张 64 MB 上限':'Exceeds the 64 MB limit per photo','请先转换为 JPG、PNG、AVIF 或 Radiance .hdr':'Convert to JPG, PNG, AVIF or Radiance .hdr first',
+  '超过 1 亿像素上限，请缩小照片':'Exceeds the 100 megapixel limit. Please reduce the image size.',
+  '已装入 {count} 张照片':'Loaded {count} photos','{count} 张未装入：{errors}':'{count} photos could not be loaded: {errors}',
+  '没有可装入的照片':'No photos could be loaded','片匣已清空，可以装入新照片':'Tray cleared. You can load new photos.',
+  '已进入沉浸观片；此浏览器未开启全屏':'Immersive viewing enabled. Fullscreen is unavailable in this browser.',
+  '机械声音已开启':'Mechanical sounds enabled','机械声音已关闭':'Mechanical sounds muted',
+  '当前浏览器无法绘制三维机身，照片仍可放映':'The 3D projector is unavailable in this browser. Photos can still be projected.',
+  '使用浏览器原生显示：{error}':'Using browser image display: {error}',
+  '显卡渲染连接已中断，请重新载入页面':'The graphics connection was lost. Please reload the page.',
+  'HDR 文件头不完整':'Incomplete HDR header','不是 Radiance RGBE 文件':'Not a Radiance RGBE file',
+  '仅支持 RGBE 格式的 Radiance HDR':'Only RGBE Radiance HDR files are supported',
+  '不支持此 HDR 像素方向，请转换为 Y / X 顺序':'Unsupported HDR pixel orientation. Convert to Y / X order.',
+  'HDR 尺寸超过 1677 万像素上限':'HDR image exceeds the 16.77 megapixel limit','HDR 像素数据不完整':'Incomplete HDR pixel data',
+  'HDR 扫描行尺寸不一致':'Inconsistent HDR scanline size','HDR RLE 长度无效':'Invalid HDR RLE length','HDR RLE 超出扫描行':'HDR RLE exceeds the scanline',
+  'HDR 旧式 RLE 长度无效':'Invalid legacy HDR RLE length',
+};
+
+function resolveLanguage(preference='auto',languages=[]){
+  if(preference==='en'||preference==='zh-CN')return preference;
+  return /^zh(?:-|$)/i.test(languages[0]||'en')?'zh-CN':'en';
+}
+function translate(key,language,params={}){
+  const text=language==='en'?(english[key]??key):key;
+  return text.replace(/\{(\w+)\}/g,(match,name)=>params[name]===undefined?match:String(params[name]));
+}
+function createI18n({document=globalThis.document,navigator=globalThis.navigator,storage,window=globalThis.window}={}){
+  let preference='auto';try{storage??=globalThis.localStorage;const saved=storage?.getItem('slide-ritual-language');if(['auto','en','zh-CN'].includes(saved))preference=saved;}catch{}
+  let language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
+  const bindings=[],listeners=new Set(),dynamic='output,#photoName,#photoMeta,#machineState,#trayLabel,#startBtn,#rangeBadge';
+  const walker=document.createTreeWalker(document.documentElement,4);let node;
+  while((node=walker.nextNode())){
+    const key=node.nodeValue.trim();if(english[key]&&!node.parentElement?.closest(dynamic))bindings.push({node,key,prefix:node.nodeValue.match(/^\s*/)[0],suffix:node.nodeValue.match(/\s*$/)[0]});
+  }
+  const attributes=[];
+  for(const element of document.querySelectorAll('[aria-label],[title]'))for(const attribute of ['aria-label','title']){
+    const key=element.getAttribute(attribute);if(english[key])attributes.push({element,attribute,key});
+  }
+  const select=document.getElementById('language');
+  const t=(key,params)=>translate(key,language,params);
+  function apply(){
+    language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
+    document.documentElement.lang=language;
+    document.title=t('暗室 · 幻灯放映');
+    for(const binding of bindings)if(binding.node.isConnected)binding.node.nodeValue=binding.prefix+t(binding.key)+binding.suffix;
+    for(const binding of attributes)binding.element.setAttribute(binding.attribute,t(binding.key));
+    if(select)select.value=preference;for(const callback of listeners)callback(language);
+  }
+  function setPreference(value){preference=['auto','en','zh-CN'].includes(value)?value:'auto';try{storage?.setItem('slide-ritual-language',preference);}catch{}apply();}
+  select?.addEventListener('change',()=>setPreference(select.value));window?.addEventListener('languagechange',()=>{if(preference==='auto')apply();});
+  apply();return{t,apply,setPreference,onChange(callback){listeners.add(callback);},get language(){return language;},get preference(){return preference;}};
 }
 
 
@@ -1429,7 +1684,10 @@ class NativeProjection {
 
 
 
+
+
 const $=id=>document.getElementById(id);
+const i18n=createI18n(),t=i18n.t;
 const room=$('room'),screen=$('screen'),audio=new ProjectorAudio();
 let native=$('nativeImage');
 const nativeProjection=new NativeProjection($('opticalGate'),$('filmMotion'),document.querySelector('.surface-texture'));
@@ -1456,42 +1714,44 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 function mountProjection(aperture){(aperture?document.querySelector('.empty-gate'):$('filmMotion')).prepend(renderer.canvas);}
 
-function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');showImmersiveControls();clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),5500);}
+function toast(message){$('toast').textContent=t(message);$('toast').classList.add('visible');showImmersiveControls();clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),5500);}
 function displayStatus(){
   const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;
   renderer.configure(enabled);
   machineLight.configure(enabled,renderer.params.highlight);
   const nativeHDR=high&&state.nativeHDR&&state.displayMode==='auto';
   const label=nativeHDR?'HDR · 原生预览':enabled?'HDR · 已开启':'SDR · 已开启';
-  $('rangeBadge').querySelector('span').textContent=label;$('rangeBadge').classList.toggle('hdr',enabled||nativeHDR);
-  $('displayInfo').textContent=enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射';
+  $('rangeBadge').querySelector('span').textContent=t(label);$('rangeBadge').classList.toggle('hdr',enabled||nativeHDR);
+  $('displayInfo').textContent=t(enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射');
   $('highlightSetting').hidden=!enabled||nativeHDR;
   updateMeta();applyNativeSettings();
 }
+function photoTitle(slide){return slide.demo?t(slide.name):slide.name;}
 function updateMeta(){
   const slide=state.slides[state.index];
-  $('photoName').textContent=slide?.name||'片匣为空';
+  $('photoName').textContent=slide?photoTitle(slide):t('片匣为空');
   let format=slide?.type||'';
   if(slide?.type==='HDR')format=state.nativeHDR?'HDR 标记 · 浏览器解码':renderer.hdr?'HDR':'HDR → SDR';
   else if(slide?.hdrCandidate)format=state.native?'HDR 标记 · 浏览器解码':format;
   else if(renderer.hdr&&slide)format='SDR → HDR';
-  $('photoMeta').textContent=slide?`${slide.demo?'示例照片 · ':''}${format}`:'';
+  $('photoMeta').textContent=slide?(slide.demo?t('示例照片 · {format}',{format:t(format)}):t(format)):'';
   const n=String(state.index+1).padStart(2,'0');$('currentCount').textContent=state.slides.length?n:'00';$('totalCount').textContent=String(state.slides.length).padStart(2,'0');
 }
 function updateUI(){
   room.classList.toggle('lit',state.on);room.classList.toggle('off',!state.on);
-  $('machineState').textContent=state.importing?'装片中':state.busy?(state.started?'过片中':'灯泡预热'):state.on?(state.auto?'自动放映':'正在放映'):'待机';
-  $('powerBtn').setAttribute('aria-pressed',String(state.on));$('powerBtn').setAttribute('aria-label',state.on?'关闭幻灯机':'开启幻灯机');
+  $('machineState').textContent=t(state.importing?'装片中':state.busy?(state.started?'过片中':'灯泡预热'):state.on?(state.auto?'自动放映':'正在放映'):'待机');
+  $('powerBtn').setAttribute('aria-pressed',String(state.on));$('powerBtn').setAttribute('aria-label',t(state.on?'关闭幻灯机':'开启幻灯机'));
+  $('hdrEntryEV').disabled=state.busy||!hdrQuery.matches||!renderer.hdrSupported;
   $('startBtn').disabled=!state.ready||state.busy||state.importing||!state.slides.length;
-  $('startBtn').textContent=state.started?'重新开机 →':'先看示例 →';
+  $('startBtn').textContent=t(state.started?'重新开机 →':'先看示例 →');
   $('powerBtn').innerHTML=powerIcon;$('powerBtn').disabled=!state.ready;
   $('importBtn').disabled=!state.ready||state.importing;
-  $('playBtn').setAttribute('aria-pressed',String(state.auto));$('playBtn').setAttribute('aria-label',state.auto?'暂停自动放映':'自动放映');
+  $('playBtn').setAttribute('aria-pressed',String(state.auto));$('playBtn').setAttribute('aria-label',t(state.auto?'暂停自动放映':'自动放映'));
   $('playBtn').innerHTML=state.auto?'<svg viewBox="0 0 24 24"><path d="M8 6h3v12H8Zm7 0h3v12h-3Z"/></svg>':'<svg viewBox="0 0 24 24"><path d="m9 6 10 6-10 6Z"/></svg>';
   $('filesBtn').disabled=!state.ready||state.importing;
   for(const id of ['prevBtn','nextBtn','playBtn'])$(id).disabled=!state.ready||state.busy||state.importing||!state.slides.length;
   $('intro').hidden=state.on||!$('settings').hidden;
-  $('trayLabel').textContent=state.demo?'/ 三张风景':`/ ${state.slides.length} 张照片`;
+  $('trayLabel').textContent=state.demo?t('/ 三张风景'):t('/ {count} 张照片',{count:state.slides.length});
   $('clearBtn').hidden=state.demo||!state.slides.length;
   for(const el of $('filmstrip').querySelectorAll('.slide'))el.setAttribute('aria-current',String(Number(el.dataset.index)===state.index));
   updateMeta();
@@ -1499,7 +1759,7 @@ function updateUI(){
 function renderTray(){
   $('filmstrip').replaceChildren();
   state.slides.forEach((slide,index)=>{
-    const button=document.createElement('button');button.className='slide';button.dataset.index=index;button.style.setProperty('--angle',`${[0,-2,1.4,-.8,1][index%5]}deg`);button.title=slide.name;button.setAttribute('aria-label',`第 ${index+1} 张：${slide.name}`);
+    const button=document.createElement('button');button.className='slide';button.dataset.index=index;button.style.setProperty('--angle',`${[0,-2,1.4,-.8,1][index%5]}deg`);button.title=photoTitle(slide);button.setAttribute('aria-label',t('第 {index} 张：{name}',{index:index+1,name:photoTitle(slide)}));
     if(slide.type==='HDR'&&!slide.url){const preview=document.createElement('span');preview.className='hdr-preview';preview.textContent='HDR';button.append(preview);}
     else {const img=document.createElement('img');img.src=slide.url;img.alt='';img.loading='lazy';button.append(img);}
     const number=document.createElement('span');number.className='slide-number';number.textContent=String(index+1).padStart(2,'0');button.append(number);
@@ -1541,10 +1801,13 @@ async function loadSlide(slide){
   if(cache.has(slide)){const loaded=cache.get(slide);if(!loaded.native&&viewport)await renderer.prepare(loaded.source,viewport);return loaded;}
   if(slide.file&&/\.(hdr|rgbe)$/i.test(slide.name))result={source:await processRadiancePixels(await slide.file.arrayBuffer(),viewport)};
   else{
-    const image=await loadImage(slide.url);const source=await decodeImage(image,viewport);
+    const image=await loadImage(slide.url);
+    const exposureSource=slide.hdrCandidate&&nativeProjection.exposureRenderer&&hdrQuery.matches&&state.displayMode==='auto'?await decodeGainMapTransition(slide.file,image,viewport):null;
+    const source=exposureSource||await decodeImage(image,viewport);
     if(source.hdr){slide.type='HDR';slide.hdrCandidate=true;}
     // Preserve the native gain map if float readback flattened it. Never manufacture its lost highlights.
-    result={source,image,native:renderer.mode==='native'||(slide.hdrCandidate&&!source.hdr)};
+    result={source,image,native:renderer.mode==='native'||Boolean(exposureSource)||(slide.hdrCandidate&&!source.hdr)};
+    if(exposureSource)result.exposureSource=exposureSource;
   }
   // Finish background filtering before the mechanical cycle starts.
   if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
@@ -1566,17 +1829,22 @@ async function preparePresentation(slide,loaded,epoch=state.epoch){
     for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
     ctx.putImageData(pixels,0,0);loaded.nativeURL=canvas.toDataURL();loaded.native=true;loaded.fallbackImage=await loadImage(loaded.nativeURL);
   }
-  const nativeImage=loaded.native?await nativeProjection.prepare(loaded.image||loaded.fallbackImage,layout,{hdr:Boolean(slide.hdrCandidate&&loaded.image&&hdrQuery.matches&&state.displayMode==='auto'),displayMode:state.displayMode,...renderer.params}):null;
+  const nativeHDR=Boolean(loaded.native&&slide.hdrCandidate&&loaded.image&&hdrQuery.matches&&state.displayMode==='auto');
+  if(nativeHDR&&nativeProjection.exposureRenderer&&loaded.exposureSource===undefined)loaded.exposureSource=await decodeGainMapTransition(slide.file,loaded.image,viewport);
+  if(epoch!==state.epoch)return null;
+  const nativeExposure=nativeHDR?await nativeProjection.prepareExposure(loaded.exposureSource,layout):null;
+  if(epoch!==state.epoch)return null;
+  const nativeImage=loaded.native?await nativeProjection.prepare(loaded.image||loaded.fallbackImage,layout,{hdr:nativeHDR,displayMode:state.displayMode,...renderer.params,exposure:nativeExposure}):null;
   if(epoch!==state.epoch)return null;
   const preparedWall=await wall.prepare(loaded.source,layout),preparedAir=await air.prepare(layout,preparedWall.color);
   if(epoch!==state.epoch)return null;
   const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded,epoch);
-  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source),nativeImage};
+  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source),nativeImage,nativeExposure};
 }
 function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
-  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=slide.name;nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');}
+  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=photoTitle(slide);nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto',prepared.nativeExposure);}
   else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
@@ -1679,7 +1947,7 @@ async function goTo(index){
     resetTransition();state.busy=false;updateUI();
     const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
     scheduleAuto();
-  }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(`无法放映：${error.message}`);}
+  }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(t('无法放映：{error}',{error:t(error.message)}));}
 }
 async function toggleAuto(){if(state.busy||state.importing)return;if(state.auto){stopAuto();return;}if(!state.on)await power();if(!state.on)return;state.auto=true;updateUI();scheduleAuto();}
 
@@ -1711,24 +1979,24 @@ async function importFiles(files,{folder=false}={}){
         const candidate=hasHDRMetadata(new Uint8Array(await file.slice(0,1_048_576).arrayBuffer()));
         slides.push({name:file.name,file,url,width:image.naturalWidth,height:image.naturalHeight,type:candidate?'HDR':'SDR',hdrCandidate:candidate});
       }
-    }catch(error){if(url)URL.revokeObjectURL(url);failures.push(`${file.name}：${error.message}`);}
+    }catch(error){if(url)URL.revokeObjectURL(url);failures.push(`${file.name}: ${t(error.message)}`);}
   }
   if(slides.length){
-    if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();}else state.slides.push(...slides);
+    if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();nativeProjection.clearExposures();}else state.slides.push(...slides);
     renderTray();fitScreen();
     if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);if(prepared&&state.on){present(slide,loaded,prepared);state.started=true;}}catch(error){toast(error.message);}}
-    toast(`已装入 ${slides.length} 张照片${failures.length?`\n${failures.length} 张未装入：${failures.slice(0,2).join('；')}`:''}`);
+    toast(t('已装入 {count} 张照片',{count:slides.length})+(failures.length?'\n'+t('{count} 张未装入：{errors}',{count:failures.length,errors:failures.slice(0,2).join('; ')}):''));
   }else toast(failures.slice(0,3).join('\n')||'没有可装入的照片');
   state.importing=false;updateUI();$('fileInput').value='';$('folderInput').value='';
   if(slides.length){toggleSettings(false);if(!state.on)await power();if(state.on){state.auto=true;updateUI();scheduleAuto();}}
 }
-function clearTray(){state.epoch++;state.on=false;state.busy=false;stopAuto();resetTransition();audio.stopFan();native.removeAttribute('src');for(const s of state.slides)if(s.url?.startsWith('blob:'))URL.revokeObjectURL(s.url);cache.clear();state.slides=[];state.index=0;state.native=false;state.nativeHDR=false;room.style.setProperty('--lamp','0');renderTray();fitScreen();toast('片匣已清空，可以装入新照片');}
+function clearTray(){state.epoch++;state.on=false;state.busy=false;stopAuto();resetTransition();audio.stopFan();native.removeAttribute('src');for(const s of state.slides)if(s.url?.startsWith('blob:'))URL.revokeObjectURL(s.url);cache.clear();nativeProjection.clearExposures();state.slides=[];state.index=0;state.native=false;state.nativeHDR=false;room.style.setProperty('--lamp','0');renderTray();fitScreen();toast('片匣已清空，可以装入新照片');}
 
 async function immersive(){
   state.immersive=!state.immersive;room.classList.toggle('immersive',state.immersive);$('immersiveBtn').setAttribute('aria-pressed',String(state.immersive));
   if(state.immersive){$('settings').hidden=true;$('settingsBtn').setAttribute('aria-expanded','false');try{await room.requestFullscreen();}catch{toast('已进入沉浸观片；此浏览器未开启全屏');}}
   else if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});
-  $('immersiveBtn').setAttribute('aria-label',state.immersive?'退出全屏':'进入全屏');fitScreen();showImmersiveControls();
+  $('immersiveBtn').setAttribute('aria-label',t(state.immersive?'退出全屏':'进入全屏'));fitScreen();showImmersiveControls();
 }
 function showImmersiveControls(){room.classList.add('interacting');clearTimeout(hideTimer);hideTimer=setTimeout(()=>{if(state.importing){showImmersiveControls();return;}room.classList.remove('interacting');},3200);}
 function toggleSettings(force){const hidden=force!==undefined?!force:!$('settings').hidden;$('settings').hidden=hidden;$('settingsBtn').setAttribute('aria-expanded',String(!hidden));$('intro').hidden=state.on||!hidden;showImmersiveControls();}
@@ -1743,19 +2011,20 @@ $('folderInput').addEventListener('change',e=>importFiles(e.target.files,{folder
 $('filesBtn').addEventListener('click',()=>{audio.unlock().catch(()=>{});$('fileInput').click();});
 $('fileInput').addEventListener('change',e=>importFiles(e.target.files));$('clearBtn').addEventListener('click',clearTray);
 $('settingsBtn').addEventListener('click',()=>toggleSettings());$('closeSettings').addEventListener('click',()=>toggleSettings(false));$('rangeBadge').addEventListener('click',()=>toggleSettings(true));
-$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',audio.enabled?'关闭机械声音':'开启机械声音');$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
+$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
 $('immersiveBtn').addEventListener('click',immersive);screen.addEventListener('dblclick',immersive);
 for(const event of ['pointermove','pointerdown','keydown','wheel','focusin'])document.addEventListener(event,showImmersiveControls,{passive:true});
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label','进入全屏');fitScreen();}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label',t('进入全屏'));fitScreen();}});
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.target.closest('summary,button')&&(e.code==='Space'||e.key==='Enter'))return;
   if(e.key==='ArrowRight'){e.preventDefault();goTo(state.index+1);}else if(e.key==='ArrowLeft'){e.preventDefault();goTo(state.index-1);}else if(e.code==='Space'){e.preventDefault();toggleAuto();}
   else if(e.key.toLowerCase()==='p')power();else if(e.key.toLowerCase()==='m')$('soundBtn').click();else if(e.key.toLowerCase()==='f')immersive();else if(e.key==='Escape'){toggleSettings(false);if(state.immersive)immersive();}
 });
-const settings=[['brightness','brightness',v=>`${Math.round(v*100)}%`],['focus','focus',v=>v<.1?'清晰':`${v.toFixed(1)} px`],['texture','texture',v=>v<.05?'无':v<.4?'轻微':v<.75?'适中':'明显'],['highlight','highlight',v=>`${v.toFixed(1)}×`]];
+const settings=[['brightness','brightness',v=>`${Math.round(v*100)}%`],['focus','focus',v=>v<.1?t('清晰'):`${v.toFixed(1)} px`],['texture','texture',v=>t(v<.05?'无':v<.4?'轻微':v<.75?'适中':'明显')],['highlight','highlight',v=>`${v.toFixed(1)}×`]];
 for(const [id,param,format]of settings)$(id).addEventListener('input',()=>{const v=Number($(id).value);renderer.params[param]=v;$(id+'Value').textContent=format(v);room.style.setProperty('--texture',String(renderer.params.texture));renderer.draw();applyNativeSettings();light(exposure);});
 $('zoom').addEventListener('input',()=>{$('zoomValue').textContent=`${Math.round(Number($('zoom').value)*100)}%`;fitScreen();});
+$('hdrEntryEV').addEventListener('input',()=>{const ev=Number($('hdrEntryEV').value);$('hdrEntryEVValue').textContent=`+${ev.toFixed(1)} EV`;nativeProjection.setExposureEV(ev);});
 $('depth').addEventListener('input',()=>{const value=$('depth').value;room.style.setProperty('--foreground-blur',`${value}px`);$('depthValue').textContent=Number(value).toFixed(1);machineLight.resize(room.clientWidth,room.clientHeight,scene,Number(value));});
 $('diffusion').addEventListener('input',()=>{wall.amount=Number($('diffusion').value);$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;light(exposure);});
 $('airAmount').addEventListener('input',()=>{const value=Number($('airAmount').value);$('airAmountValue').textContent=`${Math.round(value*100)}%`;air.setAmount(value);});
@@ -1765,20 +2034,37 @@ $('machineLights').addEventListener('input',()=>{const value=Number($('machineLi
 function setProjectorPosition(){
   const y=Number($('projectorY').value),pitch=Number($('projectorPitch').value);
   room.style.setProperty('--projector-y',`${-y}vh`);
-  $('projectorYValue').textContent=y?`${y<0?'下':'上'} ${Math.abs(y)}%`:'基准';
-  $('projectorPitchValue').textContent=pitch?`${pitch>0?'仰':'俯'} ${Math.abs(pitch)}°`:'0°';
+  $('projectorYValue').textContent=y?t(y<0?'下 {value}%':'上 {value}%',{value:Math.abs(y)}):t('基准');
+  $('projectorPitchValue').textContent=pitch?t(pitch>0?'仰 {value}°':'俯 {value}°',{value:Math.abs(pitch)}):'0°';
   scene?.setPitch(pitch);
   fitScreen();
 }
 for(const id of ['projectorY','projectorPitch'])$(id).addEventListener('input',setProjectorPosition);
 $('resetProjectorPosition').addEventListener('click',()=>{$('projectorY').value=-5;$('projectorPitch').value=0;setProjectorPosition();});
-function setPhotoPosition(){const y=Number($('photoY').value);$('photoYValue').textContent=y?`${y<0?'下':'上'} ${Math.abs(y)}%`:'基准';fitScreen();}
+function setPhotoPosition(){const y=Number($('photoY').value);$('photoYValue').textContent=y?t(y<0?'下 {value}%':'上 {value}%',{value:Math.abs(y)}):t('基准');fitScreen();}
 $('photoY').addEventListener('input',setPhotoPosition);
 $('resetPhotoPosition').addEventListener('click',()=>{$('photoY').value=-3;setPhotoPosition();});
 $('volume').addEventListener('input',()=>{const v=Number($('volume').value);audio.setVolume(v);$('volumeValue').textContent=`${Math.round(v*100)}%`;});
 $('fanVolume').addEventListener('input',()=>{const v=Number($('fanVolume').value);audio.setFanVolume(v);$('fanVolumeValue').textContent=`${Math.round(v*100)}%`;});
-$('interval').addEventListener('input',()=>{$('intervalValue').textContent=`${Number($('interval').value)} 秒`;scheduleAuto();});
+$('interval').addEventListener('input',()=>{$('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});scheduleAuto();});
 $('interval').addEventListener('change',scheduleAuto);$('displayMode').addEventListener('change',()=>{state.displayMode=$('displayMode').value;displayStatus();});hdrQuery.addEventListener('change',displayStatus);
+function refreshLanguage(){
+  updateUI();
+  $('rangeBadge').querySelector('span').textContent=t(hdrQuery.matches&&state.nativeHDR&&state.displayMode==='auto'?'HDR · 原生预览':hdrQuery.matches&&state.displayMode==='auto'&&renderer.hdrSupported?'HDR · 已开启':'SDR · 已开启');
+  const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;
+  $('hdrEntryEV').disabled=state.busy||!high||!renderer.hdrSupported;
+  $('displayInfo').textContent=t(enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射');
+  for(const [id,,format]of settings)$(id+'Value').textContent=format(Number($(id).value));
+  for(const id of ['projectorY','photoY']){const value=Number($(id).value);$(id+'Value').textContent=value?t(value<0?'下 {value}%':'上 {value}%',{value:Math.abs(value)}):t('基准');}
+  const pitch=Number($('projectorPitch').value);$('projectorPitchValue').textContent=pitch?t(pitch>0?'仰 {value}°':'俯 {value}°',{value:Math.abs(pitch)}):'0°';
+  $('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});
+  $('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));
+  $('immersiveBtn').setAttribute('aria-label',t(state.immersive?'退出全屏':'进入全屏'));
+  for(const button of $('filmstrip').querySelectorAll('.slide')){const index=Number(button.dataset.index),name=photoTitle(state.slides[index]);button.title=name;button.setAttribute('aria-label',t('第 {index} 张：{name}',{index:index+1,name}));}
+  if(state.native&&state.slides[state.index])native.alt=photoTitle(state.slides[state.index]);
+}
+i18n.onChange(refreshLanguage);
+refreshLanguage();
 let dragDepth=0;
 document.addEventListener('dragenter',e=>{if(Array.from(e.dataTransfer?.types||[]).includes('Files')){e.preventDefault();dragDepth++;$('dropOverlay').hidden=false;}});
 document.addEventListener('dragover',e=>{if(Array.from(e.dataTransfer?.types||[]).includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';}});
@@ -1789,7 +2075,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeo
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();
-try{await renderer.init();}catch(error){renderer.mode='native';toast(`使用浏览器原生显示：${error.message}`);}
+try{await renderer.init();}catch(error){renderer.mode='native';toast(t('使用浏览器原生显示：{error}',{error:t(error.message)}));}
 await nativeProjection.initExposure(renderer);
 try{await machineLight.init();}catch{machineLight.renderer.canvas.hidden=true;}
 state.ready=true;renderer.canvas.dataset.renderer=renderer.mode;displayStatus();updateUI();fitScreen();light(0);showImmersiveControls();

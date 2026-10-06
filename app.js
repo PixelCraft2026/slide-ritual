@@ -7,9 +7,12 @@ import { ProjectorScene, WallLight } from './scene.js';
 import { AirLight } from './atmosphere.js';
 import { MachineLight } from './machine-light.js';
 import { NativeProjection } from './native-projection.js';
+import { decodeGainMapTransition } from './gain-map.js';
+import { createI18n } from './i18n.js';
 import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, transitionAt, startupAt, projectionLayout } from './transition.js';
 
 const $=id=>document.getElementById(id);
+const i18n=createI18n(),t=i18n.t;
 const room=$('room'),screen=$('screen'),audio=new ProjectorAudio();
 let native=$('nativeImage');
 const nativeProjection=new NativeProjection($('opticalGate'),$('filmMotion'),document.querySelector('.surface-texture'));
@@ -36,42 +39,44 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 function mountProjection(aperture){(aperture?document.querySelector('.empty-gate'):$('filmMotion')).prepend(renderer.canvas);}
 
-function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');showImmersiveControls();clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),5500);}
+function toast(message){$('toast').textContent=t(message);$('toast').classList.add('visible');showImmersiveControls();clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').classList.remove('visible'),5500);}
 function displayStatus(){
   const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;
   renderer.configure(enabled);
   machineLight.configure(enabled,renderer.params.highlight);
   const nativeHDR=high&&state.nativeHDR&&state.displayMode==='auto';
   const label=nativeHDR?'HDR · 原生预览':enabled?'HDR · 已开启':'SDR · 已开启';
-  $('rangeBadge').querySelector('span').textContent=label;$('rangeBadge').classList.toggle('hdr',enabled||nativeHDR);
-  $('displayInfo').textContent=enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射';
+  $('rangeBadge').querySelector('span').textContent=t(label);$('rangeBadge').classList.toggle('hdr',enabled||nativeHDR);
+  $('displayInfo').textContent=t(enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射');
   $('highlightSetting').hidden=!enabled||nativeHDR;
   updateMeta();applyNativeSettings();
 }
+function photoTitle(slide){return slide.demo?t(slide.name):slide.name;}
 function updateMeta(){
   const slide=state.slides[state.index];
-  $('photoName').textContent=slide?.name||'片匣为空';
+  $('photoName').textContent=slide?photoTitle(slide):t('片匣为空');
   let format=slide?.type||'';
   if(slide?.type==='HDR')format=state.nativeHDR?'HDR 标记 · 浏览器解码':renderer.hdr?'HDR':'HDR → SDR';
   else if(slide?.hdrCandidate)format=state.native?'HDR 标记 · 浏览器解码':format;
   else if(renderer.hdr&&slide)format='SDR → HDR';
-  $('photoMeta').textContent=slide?`${slide.demo?'示例照片 · ':''}${format}`:'';
+  $('photoMeta').textContent=slide?(slide.demo?t('示例照片 · {format}',{format:t(format)}):t(format)):'';
   const n=String(state.index+1).padStart(2,'0');$('currentCount').textContent=state.slides.length?n:'00';$('totalCount').textContent=String(state.slides.length).padStart(2,'0');
 }
 function updateUI(){
   room.classList.toggle('lit',state.on);room.classList.toggle('off',!state.on);
-  $('machineState').textContent=state.importing?'装片中':state.busy?(state.started?'过片中':'灯泡预热'):state.on?(state.auto?'自动放映':'正在放映'):'待机';
-  $('powerBtn').setAttribute('aria-pressed',String(state.on));$('powerBtn').setAttribute('aria-label',state.on?'关闭幻灯机':'开启幻灯机');
+  $('machineState').textContent=t(state.importing?'装片中':state.busy?(state.started?'过片中':'灯泡预热'):state.on?(state.auto?'自动放映':'正在放映'):'待机');
+  $('powerBtn').setAttribute('aria-pressed',String(state.on));$('powerBtn').setAttribute('aria-label',t(state.on?'关闭幻灯机':'开启幻灯机'));
+  $('hdrEntryEV').disabled=state.busy||!hdrQuery.matches||!renderer.hdrSupported;
   $('startBtn').disabled=!state.ready||state.busy||state.importing||!state.slides.length;
-  $('startBtn').textContent=state.started?'重新开机 →':'先看示例 →';
+  $('startBtn').textContent=t(state.started?'重新开机 →':'先看示例 →');
   $('powerBtn').innerHTML=powerIcon;$('powerBtn').disabled=!state.ready;
   $('importBtn').disabled=!state.ready||state.importing;
-  $('playBtn').setAttribute('aria-pressed',String(state.auto));$('playBtn').setAttribute('aria-label',state.auto?'暂停自动放映':'自动放映');
+  $('playBtn').setAttribute('aria-pressed',String(state.auto));$('playBtn').setAttribute('aria-label',t(state.auto?'暂停自动放映':'自动放映'));
   $('playBtn').innerHTML=state.auto?'<svg viewBox="0 0 24 24"><path d="M8 6h3v12H8Zm7 0h3v12h-3Z"/></svg>':'<svg viewBox="0 0 24 24"><path d="m9 6 10 6-10 6Z"/></svg>';
   $('filesBtn').disabled=!state.ready||state.importing;
   for(const id of ['prevBtn','nextBtn','playBtn'])$(id).disabled=!state.ready||state.busy||state.importing||!state.slides.length;
   $('intro').hidden=state.on||!$('settings').hidden;
-  $('trayLabel').textContent=state.demo?'/ 三张风景':`/ ${state.slides.length} 张照片`;
+  $('trayLabel').textContent=state.demo?t('/ 三张风景'):t('/ {count} 张照片',{count:state.slides.length});
   $('clearBtn').hidden=state.demo||!state.slides.length;
   for(const el of $('filmstrip').querySelectorAll('.slide'))el.setAttribute('aria-current',String(Number(el.dataset.index)===state.index));
   updateMeta();
@@ -79,7 +84,7 @@ function updateUI(){
 function renderTray(){
   $('filmstrip').replaceChildren();
   state.slides.forEach((slide,index)=>{
-    const button=document.createElement('button');button.className='slide';button.dataset.index=index;button.style.setProperty('--angle',`${[0,-2,1.4,-.8,1][index%5]}deg`);button.title=slide.name;button.setAttribute('aria-label',`第 ${index+1} 张：${slide.name}`);
+    const button=document.createElement('button');button.className='slide';button.dataset.index=index;button.style.setProperty('--angle',`${[0,-2,1.4,-.8,1][index%5]}deg`);button.title=photoTitle(slide);button.setAttribute('aria-label',t('第 {index} 张：{name}',{index:index+1,name:photoTitle(slide)}));
     if(slide.type==='HDR'&&!slide.url){const preview=document.createElement('span');preview.className='hdr-preview';preview.textContent='HDR';button.append(preview);}
     else {const img=document.createElement('img');img.src=slide.url;img.alt='';img.loading='lazy';button.append(img);}
     const number=document.createElement('span');number.className='slide-number';number.textContent=String(index+1).padStart(2,'0');button.append(number);
@@ -121,10 +126,13 @@ async function loadSlide(slide){
   if(cache.has(slide)){const loaded=cache.get(slide);if(!loaded.native&&viewport)await renderer.prepare(loaded.source,viewport);return loaded;}
   if(slide.file&&/\.(hdr|rgbe)$/i.test(slide.name))result={source:await processRadiancePixels(await slide.file.arrayBuffer(),viewport)};
   else{
-    const image=await loadImage(slide.url);const source=await decodeImage(image,viewport);
+    const image=await loadImage(slide.url);
+    const exposureSource=slide.hdrCandidate&&nativeProjection.exposureRenderer&&hdrQuery.matches&&state.displayMode==='auto'?await decodeGainMapTransition(slide.file,image,viewport):null;
+    const source=exposureSource||await decodeImage(image,viewport);
     if(source.hdr){slide.type='HDR';slide.hdrCandidate=true;}
     // Preserve the native gain map if float readback flattened it. Never manufacture its lost highlights.
-    result={source,image,native:renderer.mode==='native'||(slide.hdrCandidate&&!source.hdr)};
+    result={source,image,native:renderer.mode==='native'||Boolean(exposureSource)||(slide.hdrCandidate&&!source.hdr)};
+    if(exposureSource)result.exposureSource=exposureSource;
   }
   // Finish background filtering before the mechanical cycle starts.
   if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
@@ -146,17 +154,22 @@ async function preparePresentation(slide,loaded,epoch=state.epoch){
     for(let i=0;i<src.data.length;i+=4){for(let c=0;c<3;c++)pixels.data[i+c]=255*Math.pow(Math.max(0,src.data[i+c])/(1+Math.max(0,src.data[i+c])),1/2.2);pixels.data[i+3]=255;}
     ctx.putImageData(pixels,0,0);loaded.nativeURL=canvas.toDataURL();loaded.native=true;loaded.fallbackImage=await loadImage(loaded.nativeURL);
   }
-  const nativeImage=loaded.native?await nativeProjection.prepare(loaded.image||loaded.fallbackImage,layout,{hdr:Boolean(slide.hdrCandidate&&loaded.image&&hdrQuery.matches&&state.displayMode==='auto'),displayMode:state.displayMode,...renderer.params}):null;
+  const nativeHDR=Boolean(loaded.native&&slide.hdrCandidate&&loaded.image&&hdrQuery.matches&&state.displayMode==='auto');
+  if(nativeHDR&&nativeProjection.exposureRenderer&&loaded.exposureSource===undefined)loaded.exposureSource=await decodeGainMapTransition(slide.file,loaded.image,viewport);
+  if(epoch!==state.epoch)return null;
+  const nativeExposure=nativeHDR?await nativeProjection.prepareExposure(loaded.exposureSource,layout):null;
+  if(epoch!==state.epoch)return null;
+  const nativeImage=loaded.native?await nativeProjection.prepare(loaded.image||loaded.fallbackImage,layout,{hdr:nativeHDR,displayMode:state.displayMode,...renderer.params,exposure:nativeExposure}):null;
   if(epoch!==state.epoch)return null;
   const preparedWall=await wall.prepare(loaded.source,layout),preparedAir=await air.prepare(layout,preparedWall.color);
   if(epoch!==state.epoch)return null;
   const current=presentationLayout(slide,false);if(wall.layoutKey(current)!==wall.layoutKey(layout)||air.layoutKey(current,preparedWall.color)!==preparedAir.key)return preparePresentation(slide,loaded,epoch);
-  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source),nativeImage};
+  return{layout,viewport,wall:preparedWall,air:preparedAir,spill:spillColor(loaded.source),nativeImage,nativeExposure};
 }
 function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
-  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=slide.name;nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');}
+  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=photoTitle(slide);nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto',prepared.nativeExposure);}
   else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
@@ -259,7 +272,7 @@ async function goTo(index){
     resetTransition();state.busy=false;updateUI();
     const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
     scheduleAuto();
-  }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(`无法放映：${error.message}`);}
+  }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(t('无法放映：{error}',{error:t(error.message)}));}
 }
 async function toggleAuto(){if(state.busy||state.importing)return;if(state.auto){stopAuto();return;}if(!state.on)await power();if(!state.on)return;state.auto=true;updateUI();scheduleAuto();}
 
@@ -291,24 +304,24 @@ async function importFiles(files,{folder=false}={}){
         const candidate=hasHDRMetadata(new Uint8Array(await file.slice(0,1_048_576).arrayBuffer()));
         slides.push({name:file.name,file,url,width:image.naturalWidth,height:image.naturalHeight,type:candidate?'HDR':'SDR',hdrCandidate:candidate});
       }
-    }catch(error){if(url)URL.revokeObjectURL(url);failures.push(`${file.name}：${error.message}`);}
+    }catch(error){if(url)URL.revokeObjectURL(url);failures.push(`${file.name}: ${t(error.message)}`);}
   }
   if(slides.length){
-    if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();}else state.slides.push(...slides);
+    if(state.demo||folder){for(const old of state.slides)if(old.url?.startsWith('blob:'))URL.revokeObjectURL(old.url);state.slides=slides;state.index=0;state.demo=false;cache.clear();nativeProjection.clearExposures();}else state.slides.push(...slides);
     renderTray();fitScreen();
     if(state.on){try{const slide=state.slides[state.index],loaded=await loadSlide(slide),prepared=await preparePresentation(slide,loaded);if(prepared&&state.on){present(slide,loaded,prepared);state.started=true;}}catch(error){toast(error.message);}}
-    toast(`已装入 ${slides.length} 张照片${failures.length?`\n${failures.length} 张未装入：${failures.slice(0,2).join('；')}`:''}`);
+    toast(t('已装入 {count} 张照片',{count:slides.length})+(failures.length?'\n'+t('{count} 张未装入：{errors}',{count:failures.length,errors:failures.slice(0,2).join('; ')}):''));
   }else toast(failures.slice(0,3).join('\n')||'没有可装入的照片');
   state.importing=false;updateUI();$('fileInput').value='';$('folderInput').value='';
   if(slides.length){toggleSettings(false);if(!state.on)await power();if(state.on){state.auto=true;updateUI();scheduleAuto();}}
 }
-function clearTray(){state.epoch++;state.on=false;state.busy=false;stopAuto();resetTransition();audio.stopFan();native.removeAttribute('src');for(const s of state.slides)if(s.url?.startsWith('blob:'))URL.revokeObjectURL(s.url);cache.clear();state.slides=[];state.index=0;state.native=false;state.nativeHDR=false;room.style.setProperty('--lamp','0');renderTray();fitScreen();toast('片匣已清空，可以装入新照片');}
+function clearTray(){state.epoch++;state.on=false;state.busy=false;stopAuto();resetTransition();audio.stopFan();native.removeAttribute('src');for(const s of state.slides)if(s.url?.startsWith('blob:'))URL.revokeObjectURL(s.url);cache.clear();nativeProjection.clearExposures();state.slides=[];state.index=0;state.native=false;state.nativeHDR=false;room.style.setProperty('--lamp','0');renderTray();fitScreen();toast('片匣已清空，可以装入新照片');}
 
 async function immersive(){
   state.immersive=!state.immersive;room.classList.toggle('immersive',state.immersive);$('immersiveBtn').setAttribute('aria-pressed',String(state.immersive));
   if(state.immersive){$('settings').hidden=true;$('settingsBtn').setAttribute('aria-expanded','false');try{await room.requestFullscreen();}catch{toast('已进入沉浸观片；此浏览器未开启全屏');}}
   else if(document.fullscreenElement)await document.exitFullscreen().catch(()=>{});
-  $('immersiveBtn').setAttribute('aria-label',state.immersive?'退出全屏':'进入全屏');fitScreen();showImmersiveControls();
+  $('immersiveBtn').setAttribute('aria-label',t(state.immersive?'退出全屏':'进入全屏'));fitScreen();showImmersiveControls();
 }
 function showImmersiveControls(){room.classList.add('interacting');clearTimeout(hideTimer);hideTimer=setTimeout(()=>{if(state.importing){showImmersiveControls();return;}room.classList.remove('interacting');},3200);}
 function toggleSettings(force){const hidden=force!==undefined?!force:!$('settings').hidden;$('settings').hidden=hidden;$('settingsBtn').setAttribute('aria-expanded',String(!hidden));$('intro').hidden=state.on||!hidden;showImmersiveControls();}
@@ -323,19 +336,20 @@ $('folderInput').addEventListener('change',e=>importFiles(e.target.files,{folder
 $('filesBtn').addEventListener('click',()=>{audio.unlock().catch(()=>{});$('fileInput').click();});
 $('fileInput').addEventListener('change',e=>importFiles(e.target.files));$('clearBtn').addEventListener('click',clearTray);
 $('settingsBtn').addEventListener('click',()=>toggleSettings());$('closeSettings').addEventListener('click',()=>toggleSettings(false));$('rangeBadge').addEventListener('click',()=>toggleSettings(true));
-$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',audio.enabled?'关闭机械声音':'开启机械声音');$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
+$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
 $('immersiveBtn').addEventListener('click',immersive);screen.addEventListener('dblclick',immersive);
 for(const event of ['pointermove','pointerdown','keydown','wheel','focusin'])document.addEventListener(event,showImmersiveControls,{passive:true});
-document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label','进入全屏');fitScreen();}});
+document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label',t('进入全屏'));fitScreen();}});
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.target.closest('summary,button')&&(e.code==='Space'||e.key==='Enter'))return;
   if(e.key==='ArrowRight'){e.preventDefault();goTo(state.index+1);}else if(e.key==='ArrowLeft'){e.preventDefault();goTo(state.index-1);}else if(e.code==='Space'){e.preventDefault();toggleAuto();}
   else if(e.key.toLowerCase()==='p')power();else if(e.key.toLowerCase()==='m')$('soundBtn').click();else if(e.key.toLowerCase()==='f')immersive();else if(e.key==='Escape'){toggleSettings(false);if(state.immersive)immersive();}
 });
-const settings=[['brightness','brightness',v=>`${Math.round(v*100)}%`],['focus','focus',v=>v<.1?'清晰':`${v.toFixed(1)} px`],['texture','texture',v=>v<.05?'无':v<.4?'轻微':v<.75?'适中':'明显'],['highlight','highlight',v=>`${v.toFixed(1)}×`]];
+const settings=[['brightness','brightness',v=>`${Math.round(v*100)}%`],['focus','focus',v=>v<.1?t('清晰'):`${v.toFixed(1)} px`],['texture','texture',v=>t(v<.05?'无':v<.4?'轻微':v<.75?'适中':'明显')],['highlight','highlight',v=>`${v.toFixed(1)}×`]];
 for(const [id,param,format]of settings)$(id).addEventListener('input',()=>{const v=Number($(id).value);renderer.params[param]=v;$(id+'Value').textContent=format(v);room.style.setProperty('--texture',String(renderer.params.texture));renderer.draw();applyNativeSettings();light(exposure);});
 $('zoom').addEventListener('input',()=>{$('zoomValue').textContent=`${Math.round(Number($('zoom').value)*100)}%`;fitScreen();});
+$('hdrEntryEV').addEventListener('input',()=>{const ev=Number($('hdrEntryEV').value);$('hdrEntryEVValue').textContent=`+${ev.toFixed(1)} EV`;nativeProjection.setExposureEV(ev);});
 $('depth').addEventListener('input',()=>{const value=$('depth').value;room.style.setProperty('--foreground-blur',`${value}px`);$('depthValue').textContent=Number(value).toFixed(1);machineLight.resize(room.clientWidth,room.clientHeight,scene,Number(value));});
 $('diffusion').addEventListener('input',()=>{wall.amount=Number($('diffusion').value);$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;light(exposure);});
 $('airAmount').addEventListener('input',()=>{const value=Number($('airAmount').value);$('airAmountValue').textContent=`${Math.round(value*100)}%`;air.setAmount(value);});
@@ -345,20 +359,37 @@ $('machineLights').addEventListener('input',()=>{const value=Number($('machineLi
 function setProjectorPosition(){
   const y=Number($('projectorY').value),pitch=Number($('projectorPitch').value);
   room.style.setProperty('--projector-y',`${-y}vh`);
-  $('projectorYValue').textContent=y?`${y<0?'下':'上'} ${Math.abs(y)}%`:'基准';
-  $('projectorPitchValue').textContent=pitch?`${pitch>0?'仰':'俯'} ${Math.abs(pitch)}°`:'0°';
+  $('projectorYValue').textContent=y?t(y<0?'下 {value}%':'上 {value}%',{value:Math.abs(y)}):t('基准');
+  $('projectorPitchValue').textContent=pitch?t(pitch>0?'仰 {value}°':'俯 {value}°',{value:Math.abs(pitch)}):'0°';
   scene?.setPitch(pitch);
   fitScreen();
 }
 for(const id of ['projectorY','projectorPitch'])$(id).addEventListener('input',setProjectorPosition);
 $('resetProjectorPosition').addEventListener('click',()=>{$('projectorY').value=-5;$('projectorPitch').value=0;setProjectorPosition();});
-function setPhotoPosition(){const y=Number($('photoY').value);$('photoYValue').textContent=y?`${y<0?'下':'上'} ${Math.abs(y)}%`:'基准';fitScreen();}
+function setPhotoPosition(){const y=Number($('photoY').value);$('photoYValue').textContent=y?t(y<0?'下 {value}%':'上 {value}%',{value:Math.abs(y)}):t('基准');fitScreen();}
 $('photoY').addEventListener('input',setPhotoPosition);
 $('resetPhotoPosition').addEventListener('click',()=>{$('photoY').value=-3;setPhotoPosition();});
 $('volume').addEventListener('input',()=>{const v=Number($('volume').value);audio.setVolume(v);$('volumeValue').textContent=`${Math.round(v*100)}%`;});
 $('fanVolume').addEventListener('input',()=>{const v=Number($('fanVolume').value);audio.setFanVolume(v);$('fanVolumeValue').textContent=`${Math.round(v*100)}%`;});
-$('interval').addEventListener('input',()=>{$('intervalValue').textContent=`${Number($('interval').value)} 秒`;scheduleAuto();});
+$('interval').addEventListener('input',()=>{$('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});scheduleAuto();});
 $('interval').addEventListener('change',scheduleAuto);$('displayMode').addEventListener('change',()=>{state.displayMode=$('displayMode').value;displayStatus();});hdrQuery.addEventListener('change',displayStatus);
+function refreshLanguage(){
+  updateUI();
+  $('rangeBadge').querySelector('span').textContent=t(hdrQuery.matches&&state.nativeHDR&&state.displayMode==='auto'?'HDR · 原生预览':hdrQuery.matches&&state.displayMode==='auto'&&renderer.hdrSupported?'HDR · 已开启':'SDR · 已开启');
+  const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;
+  $('hdrEntryEV').disabled=state.busy||!high||!renderer.hdrSupported;
+  $('displayInfo').textContent=t(enabled?'HDR 显示环境 · SDR 高光扩展已启用':high?(state.displayMode==='sdr'?'已选择 SDR 显示':'HDR 显示环境 · 浮点 HDR 不可用，原生 HDR 照片由浏览器处理'):'当前显示环境为 SDR · HDR 照片自动映射');
+  for(const [id,,format]of settings)$(id+'Value').textContent=format(Number($(id).value));
+  for(const id of ['projectorY','photoY']){const value=Number($(id).value);$(id+'Value').textContent=value?t(value<0?'下 {value}%':'上 {value}%',{value:Math.abs(value)}):t('基准');}
+  const pitch=Number($('projectorPitch').value);$('projectorPitchValue').textContent=pitch?t(pitch>0?'仰 {value}°':'俯 {value}°',{value:Math.abs(pitch)}):'0°';
+  $('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});
+  $('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));
+  $('immersiveBtn').setAttribute('aria-label',t(state.immersive?'退出全屏':'进入全屏'));
+  for(const button of $('filmstrip').querySelectorAll('.slide')){const index=Number(button.dataset.index),name=photoTitle(state.slides[index]);button.title=name;button.setAttribute('aria-label',t('第 {index} 张：{name}',{index:index+1,name}));}
+  if(state.native&&state.slides[state.index])native.alt=photoTitle(state.slides[state.index]);
+}
+i18n.onChange(refreshLanguage);
+refreshLanguage();
 let dragDepth=0;
 document.addEventListener('dragenter',e=>{if(Array.from(e.dataTransfer?.types||[]).includes('Files')){e.preventDefault();dragDepth++;$('dropOverlay').hidden=false;}});
 document.addEventListener('dragover',e=>{if(Array.from(e.dataTransfer?.types||[]).includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';}});
@@ -369,7 +400,7 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeo
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();
-try{await renderer.init();}catch(error){renderer.mode='native';toast(`使用浏览器原生显示：${error.message}`);}
+try{await renderer.init();}catch(error){renderer.mode='native';toast(t('使用浏览器原生显示：{error}',{error:t(error.message)}));}
 await nativeProjection.initExposure(renderer);
 try{await machineLight.init();}catch{machineLight.renderer.canvas.hidden=true;}
 state.ready=true;renderer.canvas.dataset.renderer=renderer.mode;displayStatus();updateUI();fitScreen();light(0);showImmersiveControls();
