@@ -796,8 +796,8 @@ class ProjectorScene {
     this.cream=new THREE.MeshStandardMaterial({color:0xc6bd9e,roughness:.76});
     this.meshes=0;this.buildBody();this.buildMagazine();this.buildSideLight();this.setTopReflectance(.70);this.pitch=0;
     this.ambient=new THREE.HemisphereLight(0xb8c5d5,0x100b07,.10);this.scene.add(this.ambient);
-    this.bounce=new THREE.DirectionalLight(0xffe6c7,.8);this.bounce.position.set(0,4,-6);this.scene.add(this.bounce);
-    this.side=new THREE.DirectionalLight(0xb4a28a,.13);this.side.position.set(-3,2,2);this.scene.add(this.side);
+    this.bounce=new THREE.DirectionalLight(0xffe6c7,.8);this.scene.add(this.bounce,this.bounce.target);
+    this.buildWallReturn();
     this.resize();canvas.dataset.scene='three-p150';canvas.dataset.meshes=this.meshes;
   }
   makeTexture(){const c=document.createElement('canvas');c.width=c.height=128;const ctx=c.getContext('2d'),im=ctx.createImageData(128,128);let seed=431;for(let i=0;i<im.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0;const v=118+(seed%32);im.data.set([v,v,v,255],i);}ctx.putImageData(im,0,0);const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(7,7);return t;}
@@ -807,35 +807,55 @@ class ProjectorScene {
     const corners=p.map((v,i)=>{const a=p[(i+p.length-1)%p.length].clone().sub(v),b=p[(i+1)%p.length].clone().sub(v),r=Math.min(radius,a.length()*.22,b.length()*.22);return {v,a:a.normalize().multiplyScalar(r).add(v),b:b.normalize().multiplyScalar(r).add(v)};});
     const out=new THREE.Shape();out.moveTo(corners[0].a.x,corners[0].a.y);for(const c of corners){out.lineTo(c.a.x,c.a.y);out.quadraticCurveTo(c.v.x,c.v.y,c.b.x,c.b.y);}out.closePath();out.holes=shape.holes;return out;
   }
+  buildWallReturn(){
+    // The wall return reaches the top at a grazing angle. A high light aimed
+    // at the floor acted as an overhead key and favoured the viewer-side rim.
+    this.bounce.position.set(0,2.2,-6);this.bounce.target.position.set(0,.953,0);
+    // Wall return must be occluded by the casing, rather than lighting rear
+    // lips through the lamp cover. Share the static geometry in a depth-only
+    // scene so this shadow does not add a casing pass to the live slot light.
+    const omitted=new Set([this.carriage,this.magazine,this.activeSlide,this.incomingSlide,this.vents]);
+    const depthMaterials=new Map();
+    const depthMaterial=material=>{
+      if(!depthMaterials.has(material)){const depth=material.clone();depth.colorWrite=false;depthMaterials.set(material,depth);}
+      return depthMaterials.get(material);
+    };
+    const copy=node=>{
+      if(omitted.has(node))return null;
+      let out;
+      if(node.isMesh){
+        const materials=Array.isArray(node.material)?node.material:[node.material];
+        if(materials.some(m=>m.transparent||!m.isMeshStandardMaterial))return null;
+        out=new THREE.Mesh(node.geometry,Array.isArray(node.material)?materials.map(depthMaterial):depthMaterial(node.material));out.castShadow=true;
+      }else if(node.isGroup)out=new THREE.Group();else return null;
+      out.name=node.name;out.position.copy(node.position);out.quaternion.copy(node.quaternion);out.scale.copy(node.scale);
+      for(const child of node.children){const next=copy(child);if(next)out.add(next);}
+      return out;
+    };
+    this.wallOccluders=copy(this.machine);this.wallShadowScene=new THREE.Scene();this.wallShadowScene.add(this.wallOccluders);
+    this.machine.traverse(o=>{if(o.isMesh)o.receiveShadow=true;});
+    this.bounce.castShadow=true;const shadow=this.bounce.shadow;
+    shadow.mapSize.set(1024,1024);Object.assign(shadow.camera,{left:-2.1,right:2.1,top:2.1,bottom:-2.1,near:.5,far:12});
+    shadow.camera.updateProjectionMatrix();shadow.bias=-.0003;shadow.normalBias=.008;
+    // Light colour/intensity changes do not change occlusion. Only a new
+    // physical pitch needs this map rebuilt; the slot retains live shadows.
+    shadow.autoUpdate=false;shadow.needsUpdate=true;
+    const source=this.bounce.clone();source.shadow=shadow;this.wallShadowScene.add(source,source.target);
+  }
   rolledEdge(shape,y,r,depth,name,group=this.machine){
     // Quarter-round normals turn smoothly from the top into a vertical skirt.
     // This creates a reflection on a real curved edge, not an emissive stripe.
     const p=shape.getSpacedPoints(220);p.pop();let area=0;for(let i=0;i<p.length;i++){const a=p[i],b=p[(i+1)%p.length];area+=a.x*b.y-b.x*a.y;}
-    const pos=[],indices=[],frontIndices=[],steps=9,frontY=Math.max(...p.map(v=>v.y));
+    const pos=[],indices=[],steps=9;
     for(let i=0;i<p.length;i++){
       const tangent=p[(i+1)%p.length].clone().sub(p[(i+p.length-1)%p.length]).normalize();const n=new THREE.Vector2(tangent.y,-tangent.x).multiplyScalar(Math.sign(area));
       for(let j=0;j<=steps;j++){const a=Math.min(j,steps-1)/(steps-1)*Math.PI/2,d=r*Math.sin(a),drop=j===steps?depth:r*(1-Math.cos(a));pos.push(p[i].x+n.x*d,y-drop,-p[i].y-n.y*d);}
     }
-    for(let i=0;i<p.length;i++)for(let j=0;j<steps;j++){const a=i*(steps+1)+j,b=((i+1)%p.length)*(steps+1)+j;indices.push(a,b,a+1,b,b+1,a+1);if(p[i].y>frontY-.04&&p[(i+1)%p.length].y>frontY-.04&&j<steps-1)frontIndices.push(a,b,a+1,b,b+1,a+1);}
+    for(let i=0;i<p.length;i++)for(let j=0;j<steps;j++){const a=i*(steps+1)+j,b=((i+1)%p.length)*(steps+1)+j;indices.push(...(area<0?[a,b,a+1,b,b+1,a+1]:[a,a+1,b,b,a+1,b+1]));}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setIndex(indices);g.computeVertexNormals();
-    const mat=this.topSilver.clone();this.topMaterials.push(mat);mat.side=THREE.DoubleSide;const mesh=new THREE.Mesh(g,mat);mesh.name=name;group.add(mesh);this.meshes++;
-    // Same housing material and scene lights. Polygon offset prevents z-fighting
-    // where the shallow rolled crown returns onto the top face.
-    // A shallow rolled crown returns onto the top face. The visible highlight
-    // needs this finite curved width to survive the foreground defocus.
-    const fp=[...pos],fn=Array.from(g.attributes.normal.array),spread=name.startsWith('chassis')?.11:.095;
-    for(let i=0;i<p.length;i++){
-      const a=p[i],b=p[(i+1)%p.length];if(a.y<=frontY-.04||b.y<=frontY-.04)continue;
-      const base=fp.length/3,segments=8;
-      for(const q of [a,b])for(let j=0;j<=segments;j++){
-        const t=j/segments,h=.008*Math.sin(Math.PI*t),slope=.008*Math.PI/spread*Math.cos(Math.PI*t),normal=new THREE.Vector3(0,1,-slope).normalize();
-        fp.push(q.x,y+.0008+h,-q.y+spread*t);fn.push(...normal.toArray());
-      }
-      for(let j=0;j<segments;j++){const ia=base+j,ib=base+segments+1+j;if(b.x>a.x)frontIndices.push(ia,ia+1,ib,ib,ia+1,ib+1);else frontIndices.push(ia,ib,ia+1,ib,ib+1,ia+1);}
-    }
-    const fg=new THREE.BufferGeometry();fg.setAttribute('position',new THREE.Float32BufferAttribute(fp,3));fg.setAttribute('normal',new THREE.Float32BufferAttribute(fn,3));fg.setIndex(frontIndices);
-    const fm=mat.clone();this.topMaterials.push(fm);fm.polygonOffset=true;fm.polygonOffsetFactor=-1;fm.polygonOffsetUnits=-1;
-    const front=new THREE.Mesh(fg,fm);front.name=name+'-front-reflection';mesh.add(front);this.meshes++;return mesh;
+    // Both contour windings produce outward normals. The original quarter
+    // round is the only surface: no raised crown or overlapping highlight cap.
+    const mat=this.topSilver.clone();this.topMaterials.push(mat);const mesh=new THREE.Mesh(g,mat);mesh.name=name;group.add(mesh);this.meshes++;return mesh;
   }
   box(w,h,d,x,y,z,material=this.black,group=this.machine,r=.025){
     r=Math.max(0,Math.min(r,w/4,h/4,d/4));
@@ -999,7 +1019,7 @@ class ProjectorScene {
     profile.lineTo(2.0,.26);profile.lineTo(1.87,.26);profile.lineTo(1.87,.46);profile.lineTo(1.77,.46);profile.lineTo(1.74,.26);
     profile.lineTo(1.65,.26);profile.lineTo(1.64,.46);profile.lineTo(1.33,.46);profile.lineTo(1.30,.26);profile.closePath();
     const divider=new THREE.Mesh(new THREE.ExtrudeGeometry(profile,{depth:.014,bevelEnabled:true,bevelThickness:.002,bevelSize:.002,bevelSegments:2,steps:1}),this.gray);
-    divider.position.z=.052;divider.name='profiled-tray-divider';cell.add(divider);this.meshes++;
+    divider.position.z=.052;divider.name='profiled-tray-divider';divider.receiveShadow=true;cell.add(divider);this.meshes++;
     const slide=this.makeSlide(this.cream);slide.position.set(1.57,.59,0);cell.add(slide);
     slide.visible=slot!==0;cell.userData.slide=slide;this.slideFrames.push(slide);this.cells.push(cell);return cell;
   }
@@ -1069,7 +1089,7 @@ class ProjectorScene {
     if(this.ambient)this.draw();
   }
   setEmitterAmount(value){this.emitterAmount=Math.max(0,Math.min(3,Number(value)||0));this.updateSideLight();this.draw();}
-  setPitch(value){this.pitch=Math.max(-12,Math.min(12,Number(value)||0));this.machine.rotation.x=THREE.MathUtils.degToRad(this.pitch);this.canvas.dataset.pitch=String(this.pitch);this.draw();}
+  setPitch(value){const pitch=Math.max(-12,Math.min(12,Number(value)||0));if(pitch!==this.pitch&&this.bounce)this.bounce.shadow.needsUpdate=true;this.pitch=pitch;this.machine.rotation.x=THREE.MathUtils.degToRad(this.pitch);this.canvas.dataset.pitch=String(this.pitch);this.draw();}
   lensPosition(){
     this.scene.updateMatrixWorld();
     const p=this.machine.localToWorld(new THREE.Vector3(.58,.72,-1.72)).project(this.camera),r=this.canvas.getBoundingClientRect();
@@ -1079,9 +1099,9 @@ class ProjectorScene {
   illuminate(power,exposure,color=[.45,.42,.35],gain=1){
     this.power=power;this.light=exposure;this.exposureGain=gain;this.vents.visible=power>.01;
     this.glowMaterial.opacity=0;
-    this.ambient.intensity=.018+power*.018;
-    this.bounce.color.setRGB(...color);this.bounce.intensity=.045+exposure*.52;
-    this.side.intensity=.015+power*.035;this.updateSideLight();this.draw();
+    this.ambient.intensity=.018;
+    this.bounce.color.setRGB(...color);this.bounce.intensity=Math.max(0,exposure)*.52;
+    this.updateSideLight();this.draw();
   }
   mechanism(ms,reverse=false){
     const f=mechanismAt(ms,reverse);
@@ -1116,6 +1136,10 @@ class ProjectorScene {
   draw(){
     if(this.batchDepth){this.drawPending=true;return;}
     if(this.armClip){this.machine.updateWorldMatrix(true,true);this.armClip.set(new THREE.Vector3(1,0,0),-1.105).applyMatrix4(this.machine.matrixWorld);}
+    if(this.wallShadowScene&&this.bounce.shadow.needsUpdate){
+      this.wallOccluders.rotation.x=this.machine.rotation.x;
+      this.renderer.render(this.wallShadowScene,this.camera);
+    }
     this.renderer.render(this.scene,this.camera);
   }
 }
