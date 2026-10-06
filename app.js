@@ -9,7 +9,7 @@ import { MachineLight } from './machine-light.js';
 import { NativeProjection } from './native-projection.js';
 import { decodeGainMapTransition } from './gain-map.js';
 import { createI18n } from './i18n.js';
-import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, transitionAt, startupAt, projectionLayout } from './transition.js';
+import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, motionRadius, projectionOptics, transitionAt, startupAt, projectionLayout } from './transition.js';
 
 const $=id=>document.getElementById(id);
 const i18n=createI18n(),t=i18n.t;
@@ -104,6 +104,7 @@ function presentationLayout(slide=state.slides[state.index],apertureMode=state.a
 }
 function applyLayout(layout,prepared){
   const {w,h,width,height,aperture,centerY,sw,sh,lens}=layout;projectionWidth=Math.round(width);
+  nativeProjection.setLayout(layout);
   screen.style.width=`${width}px`;screen.style.height=`${height}px`;
   room.style.setProperty('--screen-width',`${width}px`);room.style.setProperty('--screen-height',`${height}px`);
   room.style.setProperty('--aperture-size',`${aperture}px`);
@@ -169,8 +170,9 @@ async function preparePresentation(slide,loaded,epoch=state.epoch){
 function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
+  nativeProjection.setLayout(prepared.layout);
   if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=photoTitle(slide);nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto',prepared.nativeExposure);}
-  else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
+  else {native.hidden=true;nativeProjection.deactivate();nativeProjection.activate(false,null);renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
@@ -189,16 +191,15 @@ function setOptics(frame){
   gate.style.opacity=String(frame.open>0?1:0);
   // Film moves through a fixed octagonal optical field. The field's boundary
   // stays in wall coordinates, so portrait and landscape intersections differ.
-  if(state.native)nativeProjection.frame(frame);
-  else {gate.style.clipPath=`inset(0 ${frame.clipRight*100}% 0 0)`;gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';}
-  renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
+  nativeProjection.frame(frame);
+  renderer.params.motion=motionRadius(frame,nativeProjection.travel)*Math.min(devicePixelRatio||1,2);renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
-  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*projectionWidth;
+  const layout=nativeProjection.layout,optics=projectionOptics(frame,layout.aperture,layout.width),glow=$('screenGlow'),dx=(optics.shift-optics.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
-  glow.style.width=`${projectionWidth*Math.max(.15,1-frame.clipRight)}px`;
-  light(frame.exposure,frame);room.dataset.phase=frame.phase;
+  glow.style.width=`${projectionWidth*Math.max(.15,1-optics.clipRight)}px`;
+  light(frame.exposure,optics);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath=state.native?'none':'inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='none';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function stopAuto(){state.auto=false;clearTimeout(autoTimer);autoTimer=null;updateUI();}
 function scheduleAuto(){clearTimeout(autoTimer);if(!state.auto||!state.on||document.hidden)return;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=state.index+1;if(next>=state.slides.length&&!$('loop').checked){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);}
 
@@ -206,16 +207,20 @@ function animateTransport(epoch,reverse,opening,onSwap){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS;
   transporting=true;air.setTransport(true);
   audio.advance(reverse,duration/1000);room.classList.add('changing');
-  const start=performance.now();nativeProjection.start(start,opening,reduceMotion.matches);let swapped=false;
+  const start=performance.now();nativeProjection.start(start,opening,reduceMotion.matches);let swapped=false,lastRendered=-Infinity;
   return new Promise(resolve=>{
     finishTransition=resolve;
     function frame(now){
       if(epoch!==state.epoch){resolve();return;}
-      const ms=Math.max(0,Math.min(duration,now-start)),f=opening?startupAt(ms):transitionAt(ms);
+      const ms=Math.max(0,Math.min(duration,now-start));
+      // Translation stays on the compositor clock. Updating the room and
+      // bounded GPU blur at 60 Hz avoids redundant work on 120/144 Hz panels.
+      if(ms<duration&&ms-lastRendered<1000/60-.1){transitionFrame=requestAnimationFrame(frame);return;}
+      lastRendered=ms;const f=opening?startupAt(ms):transitionAt(ms);
       renderer.beginFrame();machineLight.renderer.beginFrame();scene?.beginFrame();wall.beginFrame();air.beginFrame();
       try{
       if(f.swap&&!swapped){onSwap();swapped=true;}
-      if(reduceMotion.matches){f.shift=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
+      if(reduceMotion.matches){f.shift=0;f.velocity=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
       if(opening&&!swapped){
         $('lampAperture').style.opacity=f.open>0?'1':'0';
         $('lampAperture').style.clipPath=`inset(0 ${f.clipRight*100}% 0 0)`;

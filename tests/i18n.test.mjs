@@ -16,8 +16,8 @@ test('language selection persists, auto reacts to system changes and unavailable
   const events={},saved=new Map(),select={value:'auto',addEventListener(name,handler){events[name]=handler;}},navigator={languages:['en-US']};
   const document={documentElement:{lang:''},createTreeWalker(){return{nextNode(){return null;}};},querySelectorAll(){return[];},getElementById(){return select;}};
   const window={addEventListener(name,handler){events[name]=handler;}},storage={getItem:key=>saved.get(key),setItem:(key,value)=>saved.set(key,value)};
-  const i18n=createI18n({document,navigator,window,storage});assert.equal(document.documentElement.lang,'en');
-  select.value='zh-CN';events.change();assert.equal(i18n.language,'zh-CN');assert.equal(saved.get('slide-ritual-language'),'zh-CN');
+  const i18n=createI18n({document,navigator,window,storage});assert.equal(document.documentElement.lang,'en');assert.equal(document.title,'Slide Ritual · Darkroom');
+  select.value='zh-CN';events.change();assert.equal(i18n.language,'zh-CN');assert.equal(document.title,'虚拟放映室');assert.equal(saved.get('slide-ritual-language'),'zh-CN');
   navigator.languages=['fr'];events.languagechange();assert.equal(i18n.language,'zh-CN');
   i18n.setPreference('auto');navigator.languages=['zh-HK'];events.languagechange();assert.equal(i18n.language,'zh-CN');
   const denied={getItem(){throw Error('denied');},setItem(){throw Error('denied');}};

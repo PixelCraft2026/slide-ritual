@@ -1,30 +1,33 @@
-import { CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK, transitionAt, startupAt } from './transition.js';
+import { CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK, filmTravel, motionRadius, transitionAt, startupAt } from './transition.js';
 import { ProjectionRenderer } from './renderer.js';
 
 export const DEFAULT_HDR_ENTRY_EV=1;
 export function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
-  // This layer is the incoming photo's exposure recovery. Keep the outgoing
-  // original at its settled brightness instead of flashing up to +2 EV.
-  if(reduced||ev<=0||(frame.phase&&!['in','settle'].includes(frame.phase)))return 0;
+  if(reduced)return 0;
+  // The same floating HDR canvas supplies neutral outgoing motion blur,
+  // boosted incoming motion blur, and the existing exposure recovery.
+  if(frame.phase==='out')return Math.min(1,Math.abs(frame.velocity||0)*EXIT_MS/1.5);
+  if(frame.phase==='in')return 1;
+  if(ev<=0||(frame.phase&&frame.phase!=='settle'))return 0;
   const envelope=Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));
   // Map the recovery in exposure stops to the pre-rendered HDR peak layer.
   return (2**(ev*envelope)-1)/(2**ev-1);
 }
 
-// A translated fixed clip and an opposite translation of its contents produce
-// the same wipe as inset(0, clipRight, 0, 0), without animating a paint mask.
-export function nativeWipe(frame){
-  return{gate:`translate3d(${(frame.shift-frame.clipRight)*100}%,0,0)`,contents:`translate3d(${frame.clipRight*100}%,0,0)`};
+export const nativePhotoBoost=(frame,ev=DEFAULT_HDR_ENTRY_EV)=>frame.phase==='out'?1:2**ev;
+// The outer octagon is the only clip. Move source pixels, never its boundary.
+export function nativeWipe(frame,travel=1){
+  return{gate:'translate3d(0px,0,0)',contents:`translate3d(${frame.shift*travel}px,0,0)`};
 }
 
-export function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
+export function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV,travel=1){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS,at=opening?startupAt:transitionAt;
   const times=new Set([0,duration,...(opening?[200,1000,1300]:[EXIT_MS,600,967,1167])]);
   for(let ms=1000/120;ms<duration;ms+=1000/120)times.add(ms);
   const gate=[],contents=[],exposure=[];
   for(const ms of [...times].sort((a,b)=>a-b)){
     const frame=at(ms);if(reduced)frame.shift=0;
-    const wipe=nativeWipe(frame),offset=ms/duration;
+    const wipe=nativeWipe(frame,travel),offset=ms/duration;
     gate.push({offset,transform:wipe.gate});contents.push({offset,transform:wipe.contents});
     exposure.push({offset,opacity:nativeExposureOpacity(frame,reduced,ev)});
   }
@@ -33,7 +36,7 @@ export function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY
 
 export class NativeProjection {
   constructor(gate,motion,texture){
-    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;this.exposureEV=DEFAULT_HDR_ENTRY_EV;
+    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;this.exposureEV=DEFAULT_HDR_ENTRY_EV;this.travel=1;
     if(globalThis.document?.body){
       this.staging=document.createElement('div');this.staging.hidden=true;
       Object.assign(this.staging.style,{position:'fixed',left:'0',top:'0',clipPath:'inset(0 calc(100% - 1px) calc(100% - 1px) 0)',pointerEvents:'none',zIndex:'8',contain:'layout paint'});
@@ -65,9 +68,10 @@ export class NativeProjection {
       if(resource.canvas.width!==viewport.width)resource.canvas.width=viewport.width;
       if(resource.canvas.height!==viewport.height)resource.canvas.height=viewport.height;
       resource.canvas.hidden=false;
+      resource.layoutWidth=layout.width;
       resource.renderer.params.boost=2**this.exposureEV;
-      // Render the actual HDR pixels at peak exposure once before transport.
-      // Entry/settling animate only this layer's opacity over the native image.
+      // Upload the actual HDR pixels before transport. A bounded GPU pass
+      // supplies velocity blur; settling fades this canvas over the original.
       await resource.renderer.stage(source,viewport);resource.renderer.upload(source,viewport);await resource.renderer.device.queue.onSubmittedWorkDone();
       this.stagedExposure=resource;
       for(const [key,value]of this.exposureLayers)if(this.exposureLayers.size>3&&value!==this.activeExposure&&value!==resource){this.exposureLayers.delete(key);this.releaseExposure(value);}
@@ -90,6 +94,14 @@ export class NativeProjection {
     const changed=this.hdr!==hdr;this.hdr=hdr;
     if(this.exposure){this.exposure.hidden=!this.active||!hdr;if(!hdr)this.exposure.style.opacity='0';}
     if(changed&&this.active&&this.transport)this.play();
+  }
+  setLayout(layout){this.travel=filmTravel(layout.aperture,layout.width);this.layout=layout;}
+  renderMotion(frame){
+    const resource=this.activeExposure;
+    if(!this.hdr||!resource||this.transport?.reduced||!['out','in','settle'].includes(frame.phase))return;
+    const renderer=resource.renderer,blur=motionRadius(frame,this.travel)*resource.canvas.width/resource.layoutWidth,boost=nativePhotoBoost(frame,this.exposureEV);
+    if(renderer.params.motion===blur&&renderer.params.boost===boost)return;
+    renderer.params.motion=blur;renderer.params.boost=boost;renderer.draw();
   }
   async prepare(image,layout,{hdr=false,displayMode='auto',brightness=1,focus=0,boost=1,exposure=null}={}){
     const ticket=this.prepareTicket=(this.prepareTicket||0)+1;
@@ -131,11 +143,14 @@ export class NativeProjection {
     this.active=false;this.cancel();this.clearStaging();
     if(this.exposure){this.exposure.hidden=true;this.exposure.style.opacity='0';}
     for(const element of [this.gate,this.motion,this.texture])if(element){element.style.willChange='';element.style.transform='none';}
-    this.gate.style.clipPath='inset(0)';
+    this.gate.style.clipPath='none';
   }
   async prepareExit(reduced=false){
     if(!this.active||reduced)return;
     const pending={startedAt:performance.now(),opening:false,reduced,warming:true};this.transport=pending;
+    this.renderMotion(transitionAt(0));
+    if(this.activeExposure)await this.activeExposure.renderer.device.queue.onSubmittedWorkDone();
+    if(this.transport!==pending)return;
     this.play();
     try{
       // Creating a compositor animation can trigger the first HDR raster.
@@ -157,18 +172,20 @@ export class NativeProjection {
   play(){
     this.cancel();
     if(![this.gate,this.motion,this.texture].filter(Boolean).every(element=>typeof element.animate==='function'))return;
-    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced,this.exposureEV),options={duration:frames.duration,fill:'both',easing:'linear'};
+    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced,this.exposureEV,this.travel),options={duration:frames.duration,fill:'both',easing:'linear'};
     try{
-      for(const [element,keyframes]of [[this.gate,frames.gate],[this.motion,frames.contents],[this.texture,frames.contents]])if(element)this.animations.push(element.animate(keyframes,options));
+      for(const [element,keyframes]of [[this.gate,frames.gate],[this.motion,frames.contents],[this.texture,frames.gate]])if(element)this.animations.push(element.animate(keyframes,options));
       if(this.hdr&&this.exposure)this.animations.push(this.exposure.animate(frames.exposure,options));
       const elapsed=Math.max(0,performance.now()-this.transport.startedAt);
       for(const animation of this.animations)animation.currentTime=elapsed;
     }catch{this.cancel();} // Fixed-clip translations also work without WAAPI.
   }
   frame(frame){
-    if(!this.active||this.animations.length)return;
-    const wipe=nativeWipe(frame);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
-    if(this.texture)this.texture.style.transform=wipe.contents;
+    if(!this.active)return;
+    this.renderMotion(frame);
+    if(this.animations.length)return;
+    const wipe=nativeWipe(frame,this.travel);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
+    if(this.texture)this.texture.style.transform=wipe.gate;
     if(this.exposure)this.exposure.style.opacity=String(this.hdr?nativeExposureOpacity(frame,this.transport?.reduced,this.exposureEV):0);
   }
   cancel(){for(const animation of this.animations)animation.cancel();this.animations=[];if(this.exposure)this.exposure.style.opacity='0';}

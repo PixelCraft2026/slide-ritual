@@ -1,18 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeProjection, nativeKeyframes, nativeWipe, nativeExposureOpacity } from '../native-projection.js';
+import { NativeProjection, nativeKeyframes, nativeWipe, nativeExposureOpacity, nativePhotoBoost } from '../native-projection.js';
 import { transitionAt, startupAt, EXIT_MS, EXPOSURE_PEAK } from '../transition.js';
 import { transportHarness } from './helpers/transport-harness.mjs';
 
-const shift=transform=>Number(transform.match(/translate3d\(([^%]+)%/)[1])/100;
+const shift=transform=>Number(transform.match(/translate3d\(([-\d.e]+)px/)[1]);
 function element(){return{style:{setProperty(name,value){this[name]=value;}},animations:[],animate(keyframes,options){const animation={keyframes,options,currentTime:0,pause(){this.paused=true;},play(){this.paused=false;},cancel(){this.cancelled=true;}};this.animations.push(animation);return animation;}};}
 
-test('fixed-clip countertranslations preserve the visible image and source coordinates at every phase',()=>{
+test('the optical gate remains fixed and every source pixel follows the photo translation',()=>{
   for(const [at,duration]of [[transitionAt,1500],[startupAt,1850]])for(let ms=0;ms<=duration;ms++){
     const f=at(ms),wipe=nativeWipe(f),g=shift(wipe.gate),c=shift(wipe.contents);
-    assert.ok(Math.abs(g+c-f.shift)<1e-12);
-    const left=Math.max(g,g+c),right=Math.min(g+1,g+c+1);
-    assert.ok(Math.abs(left-f.shift)<1e-12);assert.ok(Math.abs(right-(f.shift+1-f.clipRight))<1e-12);
+    assert.equal(g,0);assert.ok(Math.abs(c-f.shift)<1e-12);
+    for(const sourceX of [0,.25,.5,.75,1])assert.equal(sourceX+c,sourceX+f.shift);
     assert.ok(!/scale/.test(wipe.gate+wipe.contents));
   }
 });
@@ -25,12 +24,12 @@ test('native timelines animate translation only and retain opening and closing l
     for(const ms of opening?[200,1000,1300]:[EXIT_MS,600,967,1167])assert.ok(frames.gate.some(frame=>Math.abs(frame.offset-ms/frames.duration)<1e-12));
   }
 });
-test('outgoing HDR photos never receive the incoming exposure boost',()=>{
+test('HDR motion blur is neutral on exit and retains incoming exposure in stops',()=>{
   for(const ev of [.5,1,2])for(const opening of [false,true]){
     const at=opening?startupAt:transitionAt;
-    for(let ms=0;ms<(opening?1000:967);ms++)assert.equal(nativeExposureOpacity(at(ms),false,ev),0);
+    for(let ms=0;ms<(opening?1000:967);ms++){const f=at(ms);assert.equal(nativeExposureOpacity(f,false,ev),f.phase==='out'?Math.min(1,Math.abs(f.velocity)*EXIT_MS/1.5):0);if(f.phase==='out')assert.equal(nativePhotoBoost(f,ev),1);}
     const timeline=nativeKeyframes(opening,false,ev);
-    for(const frame of timeline.exposure)if(frame.offset*timeline.duration<(opening?1000:967))assert.equal(frame.opacity,0);
+    assert.ok(timeline.exposure.every(frame=>frame.opacity>=0&&frame.opacity<=1));
     assert.equal(nativeExposureOpacity(at(opening?1100:1050),false,ev),1);
   }
 });
@@ -59,7 +58,7 @@ test('reduced motion keeps the native photo stationary while its light gate open
 
 test('native HDR exposure peaks during entry and returns continuously to the unchanged original',()=>{
   for(const [at,duration,start,end]of [[transitionAt,1500,967,1167],[startupAt,1850,1000,1300]]){
-    assert.equal(nativeExposureOpacity(at(0)),0);assert.equal(nativeExposureOpacity(at(duration)),0);
+    assert.equal(nativeExposureOpacity(at(0)),0);assert.equal(nativePhotoBoost(at(0)),1);assert.equal(nativeExposureOpacity(at(duration)),0);
     for(let ms=start;ms<end;ms++)assert.equal(nativeExposureOpacity(at(ms)),1);
     let previous=1;
     for(let ms=end;ms<=duration;ms++){
@@ -102,7 +101,7 @@ test('HDR photo exposure is uploaded before transport, keeps current/staged text
     const current=await projection.prepareExposure(source(),{width:720,height:480});projection.activate(true,current);
     assert.equal(current.canvas.width,1440);assert.equal(current.renderer.params.boost,2);assert.equal(current.canvas.style.mixBlendMode,undefined);
     for(let i=0;i<8;i++){await projection.prepareExposure(source(),{width:720,height:480});assert.ok(projection.exposureLayers.size<=3);assert.ok([...projection.exposureLayers.values()].includes(current));}
-    const before={uploads,submits};projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.deepEqual({uploads,submits},before);
+    const before={uploads,submits};projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.equal(uploads,before.uploads);assert.equal(submits,before.submits+1,'one bounded GPU blur pass, no texture upload');
     projection.setExposureEV(.5);assert.ok(Math.abs(lastUniform[0]-Math.sqrt(2))<1e-6);
     projection.clearExposures();assert.equal(projection.exposureLayers.size,0);assert.equal(destroyedTextures,9);assert.equal(destroyedBuffers,9);
   }finally{for(const [key,value]of descriptors){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
@@ -151,7 +150,7 @@ test('native compositor animations seek the shared transport clock and cancel cl
   assert.equal(renderer.animations.length,3);assert.ok(renderer.animations.every(animation=>animation.currentTime>=610&&animation.currentTime<650));
   const transform=gate.style.transform;renderer.frame(transitionAt(1000));assert.equal(gate.style.transform,transform);
   const animations=[...renderer.animations];renderer.reset();assert.ok(animations.every(animation=>animation.cancelled));assert.equal(renderer.animations.length,0);
-  assert.equal(gate.style.transform,'translate3d(0%,0,0)');assert.equal(motion.style.transform,'translate3d(0%,0,0)');
+  assert.equal(gate.style.transform,'translate3d(0px,0,0)');assert.equal(motion.style.transform,'translate3d(0px,0,0)');
 });
 
 test('unsupported or partially failing WAAPI uses the same fixed-clip geometry without leaking an animation',()=>{
@@ -170,6 +169,17 @@ test('continuous native HDR landscape/portrait navigation reuses decoded nodes a
     }
     const result=harness.summary();assert.equal(result.nativeSrcDuringTransport,0);assert.equal(result.nativeStyleDuringTransport,0);assert.equal(result.clipMasksDuringTransport,0);
     assert.equal(result.textureUploads,0);assert.ok(result.animationStarts>=9);assert.equal(harness.metrics.animations.size,0);
+  }finally{await harness.close();}
+});
+
+test('120 Hz transport caps room draws at 60 Hz while compositor motion runs independently',async()=>{
+  const harness=await transportHarness({nativePhotos:true,frameStep:1000/120});
+  try{
+    const frames=await harness.goTo(1),drawn=frames.filter(frame=>frame.sceneRenders>0);
+    assert.ok(frames.length>=175);assert.ok(drawn.length>=85&&drawn.length<=92);
+    assert.ok(drawn.slice(1,-1).every((frame,i)=>frame.time-drawn[i].time>=1000/60-.1));
+    assert.ok(harness.summary().animationStarts>=3);assert.equal(harness.summary().uploadsDuringTransport,0);
+    assert.equal(harness.env.state.index,1);assert.equal(harness.metrics.animations.size,0);
   }finally{await harness.close();}
 });
 

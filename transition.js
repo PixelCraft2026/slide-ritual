@@ -10,16 +10,23 @@ export const SLIDE_PITCH=.098;
 export const GATE_Z=-.22;
 const clamp=x=>Math.max(0,Math.min(1,x));
 const smooth=x=>{x=clamp(x);return x*x*(3-2*x);};
-const filmEntry=p=>({shift:-.34*(1-smooth((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p)});
+const filmEntry=(p,duration=200)=>{const velocity=6*p*(1-p)/duration;return {shift:smooth(p)-1,clipRight:0,corner:0,velocity,blur:velocity*1000/240};};
+// Travel past the fixed optical field, including narrow portrait photos.
+export const filmTravel=(aperture,width)=>(aperture+width)/2+1;
+// A half-frame shutter at 60 Hz, bounded to a subtle 8 CSS-pixel radius.
+export const motionRadius=(frame,travel)=>Math.min(8,Math.abs(frame.velocity||0)*travel*1000/240);
+export function projectionOptics(frame,aperture,width){
+  const dx=frame.shift*filmTravel(aperture,width),left=Math.max(-aperture/2,dx-width/2),right=Math.min(aperture/2,dx+width/2),visible=Math.max(0,right-left),clipRight=1-visible/width;
+  // Approximate spill from the visible midline, without clipping the photo.
+  return {...frame,clipRight,shift:visible?(left+right)/(2*width)+clipRight*.5:0};
+}
 export function transitionAt(ms){
-  // Reverse the accepted entry trajectory at the same speed. The old 133 ms
-  // wipe completed most lateral movement in 40 ms and looked like a flash.
-  if(ms<EXIT_MS){const p=clamp(ms/EXIT_MS),gain=1+(EXPOSURE_PEAK-1)*smooth(p);return {phase:'out',open:1-p,...filmEntry(1-p),exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
-  if(ms<967)return {phase:'dark',open:0,shift:0,clipRight:1,corner:0,blur:0,exposure:0,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:ms>=600};
-  // The aperture's left edge holds while the slit widens (frames 76–85),
-  // then the film mount seats to the right (frames 86–90).
+  // The entire photo translates continuously inside a stationary octagon.
+  // There is no second moving mask or stationary segment of the travel.
+  if(ms<EXIT_MS){const p=clamp(ms/EXIT_MS),gain=1+(EXPOSURE_PEAK-1)*smooth(p),film=filmEntry(1-p,EXIT_MS);return {phase:'out',open:1-p,...film,velocity:-film.velocity||0,exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
+  if(ms<967)return {phase:'dark',open:0,shift:-1,clipRight:0,corner:0,velocity:0,blur:0,exposure:0,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:ms>=600};
   if(ms<1167){const p=clamp((ms-967)/200);return {phase:'in',open:p,...filmEntry(p),exposure:p*EXPOSURE_PEAK,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:true};}
-  const p=smooth((ms-1167)/333),gain=1+(EXPOSURE_PEAK-1)*(1-p);return {phase:'settle',open:1,shift:Math.sin((ms-1167)*.08)*.0018*(1-p),clipRight:0,corner:0,blur:.6*(1-p),exposure:gain,boost:gain,adaptation:gain,swap:true};
+  const p=smooth((ms-1167)/333),gain=1+(EXPOSURE_PEAK-1)*(1-p);return {phase:'settle',open:1,shift:0,clipRight:0,corner:0,velocity:0,blur:0,exposure:gain,boost:gain,adaptation:gain,swap:true};
 }
 
 // External motion follows the reference's pull / dwell / index / push order.
@@ -49,7 +56,9 @@ export function startupAt(ms){
   else if(ms<1300)mechanicalMs=967+(ms-1000)/300*200;
   else mechanicalMs=1167+Math.min(1,(ms-1300)/550)*333;
   const f=transitionAt(mechanicalMs);
-  if(ms<200){f.shift=0;f.corner=0;f.blur=0;}
+  // Only the empty white gate has a shutter wipe; photos use translation.
+  if(ms<200){f.shift=0;f.corner=0;f.velocity=0;f.blur=0;f.clipRight=clamp(ms/200);}
+  else if(ms<1300){f.velocity*=2/3;f.blur=Math.abs(f.velocity)*1000/240;}
   return {...f,mechanicalMs};
 }
 

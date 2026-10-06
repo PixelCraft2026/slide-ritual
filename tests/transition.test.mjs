@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { transitionAt, mechanismAt, startupAt, projectionLayout, SLIDE_PITCH, GATE_Z, CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK } from '../transition.js';
+import { transitionAt, mechanismAt, startupAt, projectionLayout, filmTravel, motionRadius, SLIDE_PITCH, GATE_Z, CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK } from '../transition.js';
 
 test('smooth exit retains the closed-gate swap and total transport duration',()=>{
   assert.equal(transitionAt(0).phase,'out');
@@ -24,20 +24,32 @@ test('old slide exits laterally; incoming slit opens monotonically and settles',
   assert.ok(transitionAt(90).shift<-.1);
   const end=transitionAt(CHANGE_MS);assert.equal(end.open,1);assert.equal(end.boost,1);assert.equal(end.blur,0);assert.equal(end.exposure,1);
 });
-test('exit mirrors the accepted entry geometry at the same speed without changing entry',()=>{
+test('entry and exit translate the whole photo continuously without a masking plateau',()=>{
   let previous=transitionAt(0);
   for(let ms=0;ms<EXIT_MS;ms++){
     const out=transitionAt(ms),p=1-ms/200;
-    const expected={open:p,shift:-.34*(1-((x)=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x);})((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p)};
+    const expected={open:p,shift:p*p*(3-2*p)-1,clipRight:0,corner:0};
     for(const [key,value]of Object.entries(expected))assert.ok(Math.abs(out[key]-value)<1e-12);
-    assert.ok(out.open<=previous.open&&out.clipRight>=previous.clipRight);
-    assert.ok(Math.abs(out.shift-previous.shift)<.0073,'exit must not move faster than entry');previous=out;
+    assert.ok(out.open<=previous.open);if(ms>0)assert.ok(out.shift<previous.shift,'no stationary segment inside the travel');
+    assert.ok(Math.abs(out.shift-previous.shift)<.0075);previous=out;
     if(ms>0){const incoming=transitionAt(967+200-ms);for(const key of ['open','shift','clipRight','corner','blur'])assert.ok(Math.abs(out[key]-incoming[key])<1e-12);}
   }
   for(let ms=967;ms<1167;ms++){
     const f=transitionAt(ms),p=(ms-967)/200;
-    assert.equal(f.clipRight,1-Math.min(1,p*1.3));assert.equal(f.exposure,p*EXPOSURE_PEAK);
+    assert.equal(f.clipRight,0);assert.equal(f.exposure,p*EXPOSURE_PEAK);
+    if(ms>967)assert.ok(f.shift>transitionAt(ms-1).shift,'entry cannot stop while a mask moves');
   }
+});
+test('landscape, square and portrait travel completely beyond the fixed optical field',()=>{
+  for(const [w,h]of [[1440,900],[390,844]])for(const ratio of [.25,.667,1,1.5,3]){
+    const layout=projectionLayout(w,h,ratio),travel=filmTravel(layout.aperture,layout.width),left=(layout.aperture-layout.width)/2;
+    assert.ok(left-travel+layout.width<0,'initial photo lies wholly outside the octagon');
+    assert.ok(left>=0&&left+layout.width<=layout.aperture);
+    for(let ms=0;ms<=1500;ms++){const f=transitionAt(ms),radius=motionRadius(f,travel);assert.ok(radius>=0&&radius<=8);if(['dark','settle'].includes(f.phase))assert.equal(radius,0);}
+    assert.ok(motionRadius(transitionAt(1067),travel)>0);
+  }
+  assert.equal(transitionAt(0).velocity,0);assert.equal(transitionAt(1167).velocity,0);
+  assert.ok(Math.abs(startupAt(1150).velocity/transitionAt(1067).velocity-2/3)<1e-12);
 });
 
 test('one continuous exposure recovery drives blackout emitters and entering photos',()=>{

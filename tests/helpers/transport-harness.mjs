@@ -64,7 +64,7 @@ export async function transportHarness(options={}){
   api.fitScreen();
   if(api.preparePresentation){
     let ready=false;const preparation=api.preparePresentation(slides[0],loaded);preparation.then(()=>{ready=true;},()=>{ready=true;});
-    while(!ready){if(rafs.size){clock.now+=1000/60;for(const [id,fn]of [...rafs]){if(!rafs.has(id))continue;rafs.delete(id);fn(clock.now);}}await new Promise(resolve=>setImmediate(resolve));}
+    while(!ready){if(rafs.size){clock.now+=options.frameStep||1000/60;for(const [id,fn]of [...rafs]){if(!rafs.has(id))continue;rafs.delete(id);fn(clock.now);}}await new Promise(resolve=>setImmediate(resolve));}
     api.present(slides[0],loaded,await preparation);
   }else{await photo.prepare(loaded.source);api.present(slides[0],loaded);}
   const initialUploads=metrics.textureUploads,initialBytes=metrics.textureBytes;
@@ -72,7 +72,7 @@ export async function transportHarness(options={}){
     let done=false;const work=api.goTo(index).finally(()=>{done=true;});const start=metrics.frames.length;
     let firstFrame,interrupted=false,changedLayout=false;
     for(let step=0;!done&&step<10000;step++){
-      if(rafs.size){clock.now+=1000/60;const callbacks=[...rafs.entries()];for(const [id,fn]of callbacks){
+      if(rafs.size){clock.now+=options.frameStep||1000/60;const callbacks=[...rafs.entries()];for(const [id,fn]of callbacks){
         if(!rafs.has(id))continue;rafs.delete(id);
         if(fn.name==='frame'){
           firstFrame??=clock.now;const elapsed=clock.now-firstFrame;

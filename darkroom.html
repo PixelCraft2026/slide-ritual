@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080706"><title>暗室 · 幻灯放映</title><link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzE3MTkxYSIvPjxyZWN0IHg9IjYiIHk9IjYiIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgcng9IjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2QwYjY4ZCIgc3Ryb2tlLXdpZHRoPSIyIi8+PHJlY3QgeD0iMTAiIHk9IjEyIiB3aWR0aD0iMTIiIGhlaWdodD0iOCIgZmlsbD0iI2QwYjY4ZCIvPjwvc3ZnPgo=" type="image/svg+xml"><style>:root{color-scheme:dark;font:12px "Microsoft YaHei","PingFang SC",sans-serif;--lamp:0;--exposure:0;--spill:160,153,139;--texture:.22;--screen-width:600px;--screen-height:400px;--foreground-blur:4.5px}
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080706"><title>虚拟放映室</title><link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNiIgZmlsbD0iIzE3MTkxYSIvPjxyZWN0IHg9IjYiIHk9IjYiIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgcng9IjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2QwYjY4ZCIgc3Ryb2tlLXdpZHRoPSIyIi8+PHJlY3QgeD0iMTAiIHk9IjEyIiB3aWR0aD0iMTIiIGhlaWdodD0iOCIgZmlsbD0iI2QwYjY4ZCIvPjwvc3ZnPgo=" type="image/svg+xml"><style>:root{color-scheme:dark;font:12px "Microsoft YaHei","PingFang SC",sans-serif;--lamp:0;--exposure:0;--spill:160,153,139;--texture:.22;--screen-width:600px;--screen-height:400px;--foreground-blur:4.5px}
 *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050403;color:#cbc7bd}button,input,select{font:inherit}button{color:inherit;cursor:pointer;touch-action:manipulation}button:disabled{opacity:.3;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible{outline:1px solid #c9b993;outline-offset:4px}[hidden]{display:none!important}svg{display:block}button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.35;stroke-linejoin:round;stroke-linecap:round}.room{position:relative;width:100vw;height:100svh;overflow:hidden;isolation:isolate;background:radial-gradient(ellipse at 50% 38%,#171310,#080706 66%,#020202)}
 #wallLight{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.wall-grain{position:absolute;inset:0;z-index:1;opacity:.065;pointer-events:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.63' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' opacity='.6' d='M0 0h280v280H0z'/%3E%3C/svg%3E")}
-.projection-stage{position:absolute;inset:0;z-index:2;pointer-events:none}.screen,.screen-glow,.lamp-aperture{position:absolute;left:50%;top:37%;width:var(--screen-width);height:var(--screen-height);transform:translate(-50%,-50%) rotate(.22deg);transform-origin:center}.screen{overflow:visible;opacity:0}.lit .screen{opacity:1}.optical-gate{width:100%;height:100%;overflow:hidden;clip-path:polygon(0 0,100% 0,100% 100%,0 100%);position:relative;pointer-events:auto;border-radius:.7px}.film-motion{position:absolute;inset:0;transform-origin:left center}#projection,#nativeImage{width:100%;height:100%;display:block;object-fit:fill;dynamic-range-limit:no-limit}#nativeImage{image-orientation:from-image}.surface-texture{position:absolute;inset:0;pointer-events:none;opacity:calc(var(--texture)*.16);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' d='M0 0h220v220H0z'/%3E%3C/svg%3E")}.screen-glow{background:rgba(var(--spill),.26);filter:blur(16px);opacity:calc(var(--exposure)*.3);pointer-events:none;box-shadow:0 0 16px 6px rgba(var(--spill),.16);border-radius:7px}.lamp-aperture{opacity:0;background:radial-gradient(ellipse,#fff6cf,#d9c091);clip-path:polygon(14% 0,86% 0,100% 16%,100% 84%,86% 100%,14% 100%,0 84%,0 16%);filter:blur(1px)}
+.projection-stage{position:absolute;inset:0;z-index:2;pointer-events:none}.screen,.screen-glow,.lamp-aperture{position:absolute;left:50%;top:37%;width:var(--screen-width);height:var(--screen-height);transform:translate(-50%,-50%) rotate(.22deg);transform-origin:center}.screen{overflow:visible;opacity:0}.lit .screen{opacity:1}.optical-gate{width:100%;height:100%;overflow:visible;clip-path:none;position:relative;pointer-events:auto;border-radius:.7px}.film-motion{position:absolute;inset:0;transform-origin:left center}#projection,#nativeImage{width:100%;height:100%;display:block;object-fit:fill;dynamic-range-limit:no-limit}#nativeImage{image-orientation:from-image}.surface-texture{position:absolute;inset:0;pointer-events:none;opacity:calc(var(--texture)*.16);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' d='M0 0h220v220H0z'/%3E%3C/svg%3E")}.screen-glow{background:rgba(var(--spill),.26);filter:blur(16px);opacity:calc(var(--exposure)*.3);pointer-events:none;box-shadow:0 0 16px 6px rgba(var(--spill),.16);border-radius:7px}.lamp-aperture{opacity:0;background:radial-gradient(ellipse,#fff6cf,#d9c091);clip-path:polygon(14% 0,86% 0,100% 16%,100% 84%,86% 100%,14% 100%,0 84%,0 16%);filter:blur(1px)}
 .projector{position:absolute;z-index:4;bottom:-8vh;left:50%;transform:translateX(-50%);width:min(115vh,92vw);height:59vh;filter:blur(var(--foreground-blur));pointer-events:none}.lens-haze{position:absolute;z-index:5;pointer-events:none;left:24%;bottom:-18%;width:46%;height:49%;background:radial-gradient(ellipse at 35% 50%,#d7b98208,transparent 66%);opacity:var(--lamp)}.room-vignette{position:absolute;z-index:6;pointer-events:none;inset:0;background:radial-gradient(ellipse at 50% 34%,transparent 24%,#0002 67%,#0008 100%),linear-gradient(transparent 84%,#0007)}
 .controls{position:fixed;z-index:10;top:50%;right:18px;transform:translateY(-50%) translateX(0);transition:transform .55s cubic-bezier(.2,.75,.3,1),opacity .5s;display:flex;align-items:center;pointer-events:none}.controls>*{pointer-events:auto}.room:not(.interacting) .controls{transform:translateY(-50%) translateX(calc(100% + 360px));opacity:0}.room:not(.interacting){cursor:none}.control-rail{display:flex;flex-direction:column;align-items:center;gap:4px;background:linear-gradient(115deg,#292723ac,#141311b8);border:1px solid #ffffff10;box-shadow:0 6px 36px #0003,inset 0 1px #ffffff07;border-radius:15px;padding:10px 7px;backdrop-filter:blur(18px);width:58px}.tool{display:flex;align-items:center;justify-content:center;flex-shrink:0;background:transparent;border:0;border-radius:8px;width:40px;height:36px;color:#b3b0a8;transition:color .2s,background .2s}.tool:hover{background:#ffffff0d;color:#f4edde}.tool[aria-pressed=true]{color:#e6d6b6}.folder-button{height:57px;flex-direction:column;gap:7px}.folder-button span{font-size:9px;letter-spacing:1px}.folder-button svg{width:21px;height:21px}.rail-rule{height:1px;width:24px;background:#ffffff13;margin:5px 0}.counter{display:flex;align-items:center;gap:3px;font:9px Consolas,monospace;color:#807e77;margin:3px 0}.counter b{color:#bcb7a9;font-weight:400}.start-card{position:absolute;right:80px;top:11px;width:188px;padding:20px 21px;background:#211e19a6;border:1px solid #eee1c310;backdrop-filter:blur(14px);border-radius:9px}.small-label{font-size:10px;letter-spacing:3px;color:#938675}.start-card p{font:18px/1.7 "Songti SC",SimSun,serif;color:#ded5c5;margin:15px 0 19px}.start-card small{display:block;font-size:9px;color:#776f63;margin-top:20px;white-space:nowrap}.text-button{background:transparent;border:0;padding:0;font-size:11px;color:#b8ab95}.text-button:hover{color:#f3e8d2}.text-button span{margin-left:17px}.settings{position:absolute;right:76px;top:50%;transform:translateY(-50%);width:288px;max-height:calc(100svh - 34px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#625d51 transparent;background:#1d1b17ed;border:1px solid #ffffff12;border-radius:12px;box-shadow:0 15px 60px #0008;backdrop-filter:blur(24px);padding:15px 22px 23px}.settings-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:15px}.settings-heading h1{font-size:12px;font-weight:400;letter-spacing:2px}.settings-heading .tool{font-size:24px;width:25px}.current-photo{display:flex;flex-direction:column;gap:5px;margin-bottom:16px}.current-photo>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.current-photo small{font:9px Consolas,"Microsoft YaHei",monospace;color:#7e796e}.setting{display:flex;flex-direction:column;gap:12px;margin-bottom:20px}.setting>span{display:flex;justify-content:space-between;font-size:10px;color:#aaa396}.setting output{font:10px Consolas,monospace;color:#817b6f}.setting input[type=range]{appearance:none;width:100%;height:2px;background:#484237;margin:3px 0;cursor:pointer}.setting input[type=range]::-webkit-slider-thumb{appearance:none;width:10px;height:10px;border:1px solid #c7b998;background:#b5a583;border-radius:50%}.setting input[type=range]::-moz-range-thumb{width:10px;height:10px;background:#b5a583;border:1px solid #c7b998;border-radius:50%}.select-setting{flex-direction:row;align-items:center;justify-content:space-between;gap:8px}.select-setting>span{flex-shrink:0}.select-setting select{margin-left:auto;min-width:0;max-width:100%}.setting select{background:#302b22;border:1px solid #4a4336;border-radius:4px;padding:5px 7px;color:#b1a892;font-size:10px}.check-setting{font-size:10px;display:flex;gap:7px;align-items:center;color:#a39a87}.check-setting input{accent-color:#b6a47d}.display-info{border-top:1px solid #ffffff0c;padding-top:14px;margin:16px 0 20px;display:flex;flex-direction:column;gap:7px}.range-badge{border:0;padding:0;background:none;display:flex;align-items:center;gap:6px;font:9px Consolas,"Microsoft YaHei",monospace;color:#9c947f}.range-badge i{width:4px;height:4px;border-radius:50%;background:#8c886e}.range-badge.hdr i{background:#d7cfa4;box-shadow:0 0 7px #e5cf8090}.display-info small,.help{font-size:9px;line-height:1.9;color:#736f63}.tray-heading{display:flex;justify-content:space-between;font-size:10px;color:#8c8370;margin:0 0 10px}.filmstrip{display:flex;gap:7px;overflow:auto;scrollbar-width:thin;padding:3px 0 9px}.slide{position:relative;flex-shrink:0;width:53px;height:45px;padding:5px 5px 11px;background:#514d42;border:1px solid #ffffff10;opacity:.5;border-radius:1px}.slide[aria-current=true]{opacity:1;background:#aaa08b}.slide img{width:100%;height:100%;object-fit:contain}.slide-number{position:absolute;bottom:2px;left:6px;font:6px Consolas;color:#28261f}.slide-type{display:none}.secondary-button{width:100%;background:none;border:1px solid #51493b;border-radius:5px;padding:9px;font-size:10px;color:#a69b87;margin:8px 0 15px}.help{display:block}.toast{position:absolute;right:80px;bottom:0;width:240px;background:#292419eb;backdrop-filter:blur(18px);border:1px solid #b2a58423;border-radius:7px;padding:13px 17px;font-size:11px;line-height:1.8;white-space:pre-line;opacity:0;transform:translateX(10px);transition:opacity .25s,transform .3s;pointer-events:none}.toast.visible{opacity:1;transform:translateX(0)}.drop-overlay{position:absolute;inset:12px;z-index:20;background:#18150ec9;backdrop-filter:blur(4px);border:1px dashed #a9997860;display:grid;place-items:center;font:22px SimSun,serif;letter-spacing:4px;pointer-events:none}.sr-only{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
 @media(max-width:600px){.controls{right:10px}.control-rail{width:48px;padding:8px 3px;border-radius:12px;gap:2px}.tool{width:36px;height:33px}.folder-button{height:49px}.folder-button span{font-size:8px}.counter{font-size:8px}.settings{right:59px;width:min(276px,calc(100vw - 80px));padding:13px 17px 20px}.start-card{right:65px;width:170px;padding:17px}.toast{right:62px;width:220px}.projector{width:128vw;height:47vh;bottom:-4vh;left:46%}.screen,.screen-glow,.lamp-aperture{top:34%}.room-vignette{background:radial-gradient(ellipse at 50% 35%,transparent 30%,#0005 100%),linear-gradient(transparent 85%,#0008)}}
@@ -460,7 +460,7 @@ fn encode(v:vec3f)->vec3f { let a=abs(v); return sign(v)*select(1.055*pow(a,vec3
   let dx=dpdx(uv);let dy=dpdy(uv);
   let center=textureSampleGrad(tex,sam,uv,dx,dy);var c=center.rgb;
   if(p.effects.y>0.){c=c*.4+(textureSampleGrad(tex,sam,uv+vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv+vec2f(0.,d.y),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(0.,d.y),dx,dy).rgb)*.15;}
-  if(p.effects.w>0.) { var moving=center.rgb/9.;for(var i=-4;i<=4;i++){if(i!=0){moving+=textureSampleGrad(tex,sam,uv+vec2f(f32(i)*p.effects.w/p.size.x,0.),dx,dy).rgb/9.;}}c=mix(c,moving,.85); }
+  if(p.effects.w>0.) { let r=p.effects.w/p.size.x;let moving=center.rgb*.25+(textureSampleGrad(tex,sam,uv+vec2f(r*.5,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(r*.5,0.),dx,dy).rgb)*.25+(textureSampleGrad(tex,sam,uv+vec2f(r,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(r,0.),dx,dy).rgb)*.125;c=mix(c,moving,.85); }
   if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
   c*=p.effects.x;
   let l=max(dot(c,vec3f(.22897456,.69173852,.07928691)),0.00001);
@@ -481,7 +481,7 @@ const fragmentGL=`#version 300 es
 precision highp float;uniform sampler2D tex;uniform vec4 effects;uniform vec4 source;uniform vec2 size;uniform vec2 transparency;in vec2 uv;out vec4 outputColor;
 vec3 encode(vec3 v){vec3 a=abs(v);return sign(v)*mix(1.055*pow(a,vec3(1./2.4))-.055,a*12.92,lessThanEqual(a,vec3(.0031308)));}
 void main(){vec2 d=effects.y/size;vec4 center=texture(tex,uv);vec3 c=center.rgb;if(effects.y>0.)c=c*.4+(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
-if(effects.w>0.){vec3 moving=center.rgb/9.;for(int i=-4;i<=4;i++){if(i!=0)moving+=texture(tex,uv+vec2(float(i)*effects.w/size.x,0.)).rgb/9.;}c=mix(c,moving,.85);}
+if(effects.w>0.){float r=effects.w/size.x;vec3 moving=center.rgb*.25+(texture(tex,uv+vec2(r*.5,0.)).rgb+texture(tex,uv-vec2(r*.5,0.)).rgb)*.25+(texture(tex,uv+vec2(r,0.)).rgb+texture(tex,uv-vec2(r,0.)).rgb)*.125;c=mix(c,moving,.85);}
 if(source.z>.5){c=vec3(dot(c,vec3(1.22494018,-.22494018,0.)),dot(c,vec3(-.04205695,1.04205695,0.)),dot(c,vec3(-.01963755,-.07863605,1.09827360)));}
 c*=effects.x;float l=max(dot(c,vec3(.2126,.7152,.0722)),.00001);if(source.x>.5)c*=min(1.,l/(1.+l)*1.25)/l;
 c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(center.a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;
@@ -704,16 +704,23 @@ const SLIDE_PITCH=.098;
 const GATE_Z=-.22;
 const clamp=x=>Math.max(0,Math.min(1,x));
 const smooth=x=>{x=clamp(x);return x*x*(3-2*x);};
-const filmEntry=p=>({shift:-.34*(1-smooth((p-.65)/.35)),clipRight:1-Math.min(1,p*1.3),corner:.15*(1-p),blur:3.5*(1-p)});
+const filmEntry=(p,duration=200)=>{const velocity=6*p*(1-p)/duration;return {shift:smooth(p)-1,clipRight:0,corner:0,velocity,blur:velocity*1000/240};};
+// Travel past the fixed optical field, including narrow portrait photos.
+const filmTravel=(aperture,width)=>(aperture+width)/2+1;
+// A half-frame shutter at 60 Hz, bounded to a subtle 8 CSS-pixel radius.
+const motionRadius=(frame,travel)=>Math.min(8,Math.abs(frame.velocity||0)*travel*1000/240);
+function projectionOptics(frame,aperture,width){
+  const dx=frame.shift*filmTravel(aperture,width),left=Math.max(-aperture/2,dx-width/2),right=Math.min(aperture/2,dx+width/2),visible=Math.max(0,right-left),clipRight=1-visible/width;
+  // Approximate spill from the visible midline, without clipping the photo.
+  return {...frame,clipRight,shift:visible?(left+right)/(2*width)+clipRight*.5:0};
+}
 function transitionAt(ms){
-  // Reverse the accepted entry trajectory at the same speed. The old 133 ms
-  // wipe completed most lateral movement in 40 ms and looked like a flash.
-  if(ms<EXIT_MS){const p=clamp(ms/EXIT_MS),gain=1+(EXPOSURE_PEAK-1)*smooth(p);return {phase:'out',open:1-p,...filmEntry(1-p),exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
-  if(ms<967)return {phase:'dark',open:0,shift:0,clipRight:1,corner:0,blur:0,exposure:0,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:ms>=600};
-  // The aperture's left edge holds while the slit widens (frames 76–85),
-  // then the film mount seats to the right (frames 86–90).
+  // The entire photo translates continuously inside a stationary octagon.
+  // There is no second moving mask or stationary segment of the travel.
+  if(ms<EXIT_MS){const p=clamp(ms/EXIT_MS),gain=1+(EXPOSURE_PEAK-1)*smooth(p),film=filmEntry(1-p,EXIT_MS);return {phase:'out',open:1-p,...film,velocity:-film.velocity||0,exposure:(1-p)*gain,boost:gain,adaptation:gain,swap:false};}
+  if(ms<967)return {phase:'dark',open:0,shift:-1,clipRight:0,corner:0,velocity:0,blur:0,exposure:0,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:ms>=600};
   if(ms<1167){const p=clamp((ms-967)/200);return {phase:'in',open:p,...filmEntry(p),exposure:p*EXPOSURE_PEAK,boost:EXPOSURE_PEAK,adaptation:EXPOSURE_PEAK,swap:true};}
-  const p=smooth((ms-1167)/333),gain=1+(EXPOSURE_PEAK-1)*(1-p);return {phase:'settle',open:1,shift:Math.sin((ms-1167)*.08)*.0018*(1-p),clipRight:0,corner:0,blur:.6*(1-p),exposure:gain,boost:gain,adaptation:gain,swap:true};
+  const p=smooth((ms-1167)/333),gain=1+(EXPOSURE_PEAK-1)*(1-p);return {phase:'settle',open:1,shift:0,clipRight:0,corner:0,velocity:0,blur:0,exposure:gain,boost:gain,adaptation:gain,swap:true};
 }
 
 // External motion follows the reference's pull / dwell / index / push order.
@@ -743,7 +750,9 @@ function startupAt(ms){
   else if(ms<1300)mechanicalMs=967+(ms-1000)/300*200;
   else mechanicalMs=1167+Math.min(1,(ms-1300)/550)*333;
   const f=transitionAt(mechanicalMs);
-  if(ms<200){f.shift=0;f.corner=0;f.blur=0;}
+  // Only the empty white gate has a shutter wipe; photos use translation.
+  if(ms<200){f.shift=0;f.corner=0;f.velocity=0;f.blur=0;f.clipRight=clamp(ms/200);}
+  else if(ms<1300){f.velocity*=2/3;f.blur=Math.abs(f.velocity)*1000/240;}
   return {...f,mechanicalMs};
 }
 
@@ -1336,28 +1345,31 @@ class MachineLight {
 
 const DEFAULT_HDR_ENTRY_EV=1;
 function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
-  // This layer is the incoming photo's exposure recovery. Keep the outgoing
-  // original at its settled brightness instead of flashing up to +2 EV.
-  if(reduced||ev<=0||(frame.phase&&!['in','settle'].includes(frame.phase)))return 0;
+  if(reduced)return 0;
+  // The same floating HDR canvas supplies neutral outgoing motion blur,
+  // boosted incoming motion blur, and the existing exposure recovery.
+  if(frame.phase==='out')return Math.min(1,Math.abs(frame.velocity||0)*EXIT_MS/1.5);
+  if(frame.phase==='in')return 1;
+  if(ev<=0||(frame.phase&&frame.phase!=='settle'))return 0;
   const envelope=Math.max(0,Math.min(1,((frame.boost??1)-1)/(EXPOSURE_PEAK-1)));
   // Map the recovery in exposure stops to the pre-rendered HDR peak layer.
   return (2**(ev*envelope)-1)/(2**ev-1);
 }
 
-// A translated fixed clip and an opposite translation of its contents produce
-// the same wipe as inset(0, clipRight, 0, 0), without animating a paint mask.
-function nativeWipe(frame){
-  return{gate:`translate3d(${(frame.shift-frame.clipRight)*100}%,0,0)`,contents:`translate3d(${frame.clipRight*100}%,0,0)`};
+const nativePhotoBoost=(frame,ev=DEFAULT_HDR_ENTRY_EV)=>frame.phase==='out'?1:2**ev;
+// The outer octagon is the only clip. Move source pixels, never its boundary.
+function nativeWipe(frame,travel=1){
+  return{gate:'translate3d(0px,0,0)',contents:`translate3d(${frame.shift*travel}px,0,0)`};
 }
 
-function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
+function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV,travel=1){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS,at=opening?startupAt:transitionAt;
   const times=new Set([0,duration,...(opening?[200,1000,1300]:[EXIT_MS,600,967,1167])]);
   for(let ms=1000/120;ms<duration;ms+=1000/120)times.add(ms);
   const gate=[],contents=[],exposure=[];
   for(const ms of [...times].sort((a,b)=>a-b)){
     const frame=at(ms);if(reduced)frame.shift=0;
-    const wipe=nativeWipe(frame),offset=ms/duration;
+    const wipe=nativeWipe(frame,travel),offset=ms/duration;
     gate.push({offset,transform:wipe.gate});contents.push({offset,transform:wipe.contents});
     exposure.push({offset,opacity:nativeExposureOpacity(frame,reduced,ev)});
   }
@@ -1366,7 +1378,7 @@ function nativeKeyframes(opening=false,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
 
 class NativeProjection {
   constructor(gate,motion,texture){
-    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;this.exposureEV=DEFAULT_HDR_ENTRY_EV;
+    this.gate=gate;this.motion=motion;this.texture=texture;this.animations=[];this.active=false;this.exposureEV=DEFAULT_HDR_ENTRY_EV;this.travel=1;
     if(globalThis.document?.body){
       this.staging=document.createElement('div');this.staging.hidden=true;
       Object.assign(this.staging.style,{position:'fixed',left:'0',top:'0',clipPath:'inset(0 calc(100% - 1px) calc(100% - 1px) 0)',pointerEvents:'none',zIndex:'8',contain:'layout paint'});
@@ -1398,9 +1410,10 @@ class NativeProjection {
       if(resource.canvas.width!==viewport.width)resource.canvas.width=viewport.width;
       if(resource.canvas.height!==viewport.height)resource.canvas.height=viewport.height;
       resource.canvas.hidden=false;
+      resource.layoutWidth=layout.width;
       resource.renderer.params.boost=2**this.exposureEV;
-      // Render the actual HDR pixels at peak exposure once before transport.
-      // Entry/settling animate only this layer's opacity over the native image.
+      // Upload the actual HDR pixels before transport. A bounded GPU pass
+      // supplies velocity blur; settling fades this canvas over the original.
       await resource.renderer.stage(source,viewport);resource.renderer.upload(source,viewport);await resource.renderer.device.queue.onSubmittedWorkDone();
       this.stagedExposure=resource;
       for(const [key,value]of this.exposureLayers)if(this.exposureLayers.size>3&&value!==this.activeExposure&&value!==resource){this.exposureLayers.delete(key);this.releaseExposure(value);}
@@ -1423,6 +1436,14 @@ class NativeProjection {
     const changed=this.hdr!==hdr;this.hdr=hdr;
     if(this.exposure){this.exposure.hidden=!this.active||!hdr;if(!hdr)this.exposure.style.opacity='0';}
     if(changed&&this.active&&this.transport)this.play();
+  }
+  setLayout(layout){this.travel=filmTravel(layout.aperture,layout.width);this.layout=layout;}
+  renderMotion(frame){
+    const resource=this.activeExposure;
+    if(!this.hdr||!resource||this.transport?.reduced||!['out','in','settle'].includes(frame.phase))return;
+    const renderer=resource.renderer,blur=motionRadius(frame,this.travel)*resource.canvas.width/resource.layoutWidth,boost=nativePhotoBoost(frame,this.exposureEV);
+    if(renderer.params.motion===blur&&renderer.params.boost===boost)return;
+    renderer.params.motion=blur;renderer.params.boost=boost;renderer.draw();
   }
   async prepare(image,layout,{hdr=false,displayMode='auto',brightness=1,focus=0,boost=1,exposure=null}={}){
     const ticket=this.prepareTicket=(this.prepareTicket||0)+1;
@@ -1464,11 +1485,14 @@ class NativeProjection {
     this.active=false;this.cancel();this.clearStaging();
     if(this.exposure){this.exposure.hidden=true;this.exposure.style.opacity='0';}
     for(const element of [this.gate,this.motion,this.texture])if(element){element.style.willChange='';element.style.transform='none';}
-    this.gate.style.clipPath='inset(0)';
+    this.gate.style.clipPath='none';
   }
   async prepareExit(reduced=false){
     if(!this.active||reduced)return;
     const pending={startedAt:performance.now(),opening:false,reduced,warming:true};this.transport=pending;
+    this.renderMotion(transitionAt(0));
+    if(this.activeExposure)await this.activeExposure.renderer.device.queue.onSubmittedWorkDone();
+    if(this.transport!==pending)return;
     this.play();
     try{
       // Creating a compositor animation can trigger the first HDR raster.
@@ -1490,18 +1514,20 @@ class NativeProjection {
   play(){
     this.cancel();
     if(![this.gate,this.motion,this.texture].filter(Boolean).every(element=>typeof element.animate==='function'))return;
-    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced,this.exposureEV),options={duration:frames.duration,fill:'both',easing:'linear'};
+    const frames=nativeKeyframes(this.transport.opening,this.transport.reduced,this.exposureEV,this.travel),options={duration:frames.duration,fill:'both',easing:'linear'};
     try{
-      for(const [element,keyframes]of [[this.gate,frames.gate],[this.motion,frames.contents],[this.texture,frames.contents]])if(element)this.animations.push(element.animate(keyframes,options));
+      for(const [element,keyframes]of [[this.gate,frames.gate],[this.motion,frames.contents],[this.texture,frames.gate]])if(element)this.animations.push(element.animate(keyframes,options));
       if(this.hdr&&this.exposure)this.animations.push(this.exposure.animate(frames.exposure,options));
       const elapsed=Math.max(0,performance.now()-this.transport.startedAt);
       for(const animation of this.animations)animation.currentTime=elapsed;
     }catch{this.cancel();} // Fixed-clip translations also work without WAAPI.
   }
   frame(frame){
-    if(!this.active||this.animations.length)return;
-    const wipe=nativeWipe(frame);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
-    if(this.texture)this.texture.style.transform=wipe.contents;
+    if(!this.active)return;
+    this.renderMotion(frame);
+    if(this.animations.length)return;
+    const wipe=nativeWipe(frame,this.travel);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
+    if(this.texture)this.texture.style.transform=wipe.gate;
     if(this.exposure)this.exposure.style.opacity=String(this.hdr?nativeExposureOpacity(frame,this.transport?.reduced,this.exposureEV):0);
   }
   cancel(){for(const animation of this.animations)animation.cancel();this.animations=[];if(this.exposure)this.exposure.style.opacity='0';}
@@ -1616,7 +1642,7 @@ async function decodeGainMapTransition(file,image,viewport){
 
 // Chinese source strings are the stable keys. User photo names are never translated.
 const english={
-  '暗室 · 幻灯放映':'Slide Ritual · Darkroom',
+  '虚拟放映室':'Slide Ritual · Darkroom',
   '墙上的投影':'Projection on the wall','当前照片的实时投影':'Live projection of the current photo',
   '从后方观看的 Leica P150 幻灯机，前景虚焦，右侧为机械片匣':'Rear view of a Leica P150 projector, softly out of focus, with the slide tray on the right',
   '放映控制':'Projection controls','悬浮控制栏':'Floating controls','选择照片文件夹':'Choose a photo folder',
@@ -1695,7 +1721,7 @@ function createI18n({document=globalThis.document,navigator=globalThis.navigator
   function apply(){
     language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
     document.documentElement.lang=language;
-    document.title=t('暗室 · 幻灯放映');
+    document.title=t('虚拟放映室');
     for(const binding of bindings)if(binding.node.isConnected)binding.node.nodeValue=binding.prefix+t(binding.key)+binding.suffix;
     for(const binding of attributes)binding.element.setAttribute(binding.attribute,t(binding.key));
     if(select)select.value=preference;for(const callback of listeners)callback(language);
@@ -1811,6 +1837,7 @@ function presentationLayout(slide=state.slides[state.index],apertureMode=state.a
 }
 function applyLayout(layout,prepared){
   const {w,h,width,height,aperture,centerY,sw,sh,lens}=layout;projectionWidth=Math.round(width);
+  nativeProjection.setLayout(layout);
   screen.style.width=`${width}px`;screen.style.height=`${height}px`;
   room.style.setProperty('--screen-width',`${width}px`);room.style.setProperty('--screen-height',`${height}px`);
   room.style.setProperty('--aperture-size',`${aperture}px`);
@@ -1876,8 +1903,9 @@ async function preparePresentation(slide,loaded,epoch=state.epoch){
 function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
+  nativeProjection.setLayout(prepared.layout);
   if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=photoTitle(slide);nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto',prepared.nativeExposure);}
-  else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
+  else {native.hidden=true;nativeProjection.deactivate();nativeProjection.activate(false,null);renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
@@ -1896,16 +1924,15 @@ function setOptics(frame){
   gate.style.opacity=String(frame.open>0?1:0);
   // Film moves through a fixed octagonal optical field. The field's boundary
   // stays in wall coordinates, so portrait and landscape intersections differ.
-  if(state.native)nativeProjection.frame(frame);
-  else {gate.style.clipPath=`inset(0 ${frame.clipRight*100}% 0 0)`;gate.style.transform=`translateX(${frame.shift*100}%)`;motion.style.transform='none';}
-  renderer.params.motion=frame.blur;renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
+  nativeProjection.frame(frame);
+  renderer.params.motion=motionRadius(frame,nativeProjection.travel)*Math.min(devicePixelRatio||1,2);renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
-  const glow=$('screenGlow'),dx=(frame.shift-frame.clipRight*.5)*projectionWidth;
+  const layout=nativeProjection.layout,optics=projectionOptics(frame,layout.aperture,layout.width),glow=$('screenGlow'),dx=(optics.shift-optics.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
-  glow.style.width=`${projectionWidth*Math.max(.15,1-frame.clipRight)}px`;
-  light(frame.exposure,frame);room.dataset.phase=frame.phase;
+  glow.style.width=`${projectionWidth*Math.max(.15,1-optics.clipRight)}px`;
+  light(frame.exposure,optics);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath=state.native?'none':'inset(0)';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='none';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function stopAuto(){state.auto=false;clearTimeout(autoTimer);autoTimer=null;updateUI();}
 function scheduleAuto(){clearTimeout(autoTimer);if(!state.auto||!state.on||document.hidden)return;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=state.index+1;if(next>=state.slides.length&&!$('loop').checked){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);}
 
@@ -1913,16 +1940,20 @@ function animateTransport(epoch,reverse,opening,onSwap){
   const duration=opening?STARTUP_CHANGE_MS:CHANGE_MS;
   transporting=true;air.setTransport(true);
   audio.advance(reverse,duration/1000);room.classList.add('changing');
-  const start=performance.now();nativeProjection.start(start,opening,reduceMotion.matches);let swapped=false;
+  const start=performance.now();nativeProjection.start(start,opening,reduceMotion.matches);let swapped=false,lastRendered=-Infinity;
   return new Promise(resolve=>{
     finishTransition=resolve;
     function frame(now){
       if(epoch!==state.epoch){resolve();return;}
-      const ms=Math.max(0,Math.min(duration,now-start)),f=opening?startupAt(ms):transitionAt(ms);
+      const ms=Math.max(0,Math.min(duration,now-start));
+      // Translation stays on the compositor clock. Updating the room and
+      // bounded GPU blur at 60 Hz avoids redundant work on 120/144 Hz panels.
+      if(ms<duration&&ms-lastRendered<1000/60-.1){transitionFrame=requestAnimationFrame(frame);return;}
+      lastRendered=ms;const f=opening?startupAt(ms):transitionAt(ms);
       renderer.beginFrame();machineLight.renderer.beginFrame();scene?.beginFrame();wall.beginFrame();air.beginFrame();
       try{
       if(f.swap&&!swapped){onSwap();swapped=true;}
-      if(reduceMotion.matches){f.shift=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
+      if(reduceMotion.matches){f.shift=0;f.velocity=0;f.blur=0;f.corner=0;f.boost=1;f.adaptation=1;f.exposure=f.open>0?1:0;}
       if(opening&&!swapped){
         $('lampAperture').style.opacity=f.open>0?'1':'0';
         $('lampAperture').style.clipPath=`inset(0 ${f.clipRight*100}% 0 0)`;

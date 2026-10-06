@@ -20,7 +20,7 @@ fn encode(v:vec3f)->vec3f { let a=abs(v); return sign(v)*select(1.055*pow(a,vec3
   let dx=dpdx(uv);let dy=dpdy(uv);
   let center=textureSampleGrad(tex,sam,uv,dx,dy);var c=center.rgb;
   if(p.effects.y>0.){c=c*.4+(textureSampleGrad(tex,sam,uv+vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(d.x,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv+vec2f(0.,d.y),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(0.,d.y),dx,dy).rgb)*.15;}
-  if(p.effects.w>0.) { var moving=center.rgb/9.;for(var i=-4;i<=4;i++){if(i!=0){moving+=textureSampleGrad(tex,sam,uv+vec2f(f32(i)*p.effects.w/p.size.x,0.),dx,dy).rgb/9.;}}c=mix(c,moving,.85); }
+  if(p.effects.w>0.) { let r=p.effects.w/p.size.x;let moving=center.rgb*.25+(textureSampleGrad(tex,sam,uv+vec2f(r*.5,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(r*.5,0.),dx,dy).rgb)*.25+(textureSampleGrad(tex,sam,uv+vec2f(r,0.),dx,dy).rgb+textureSampleGrad(tex,sam,uv-vec2f(r,0.),dx,dy).rgb)*.125;c=mix(c,moving,.85); }
   if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
   c*=p.effects.x;
   let l=max(dot(c,vec3f(.22897456,.69173852,.07928691)),0.00001);
@@ -41,7 +41,7 @@ const fragmentGL=`#version 300 es
 precision highp float;uniform sampler2D tex;uniform vec4 effects;uniform vec4 source;uniform vec2 size;uniform vec2 transparency;in vec2 uv;out vec4 outputColor;
 vec3 encode(vec3 v){vec3 a=abs(v);return sign(v)*mix(1.055*pow(a,vec3(1./2.4))-.055,a*12.92,lessThanEqual(a,vec3(.0031308)));}
 void main(){vec2 d=effects.y/size;vec4 center=texture(tex,uv);vec3 c=center.rgb;if(effects.y>0.)c=c*.4+(texture(tex,uv+vec2(d.x,0.)).rgb+texture(tex,uv-vec2(d.x,0.)).rgb+texture(tex,uv+vec2(0.,d.y)).rgb+texture(tex,uv-vec2(0.,d.y)).rgb)*.15;
-if(effects.w>0.){vec3 moving=center.rgb/9.;for(int i=-4;i<=4;i++){if(i!=0)moving+=texture(tex,uv+vec2(float(i)*effects.w/size.x,0.)).rgb/9.;}c=mix(c,moving,.85);}
+if(effects.w>0.){float r=effects.w/size.x;vec3 moving=center.rgb*.25+(texture(tex,uv+vec2(r*.5,0.)).rgb+texture(tex,uv-vec2(r*.5,0.)).rgb)*.25+(texture(tex,uv+vec2(r,0.)).rgb+texture(tex,uv-vec2(r,0.)).rgb)*.125;c=mix(c,moving,.85);}
 if(source.z>.5){c=vec3(dot(c,vec3(1.22494018,-.22494018,0.)),dot(c,vec3(-.04205695,1.04205695,0.)),dot(c,vec3(-.01963755,-.07863605,1.09827360)));}
 c*=effects.x;float l=max(dot(c,vec3(.2126,.7152,.0722)),.00001);if(source.x>.5)c*=min(1.,l/(1.+l)*1.25)/l;
 c*=1.-dot(uv-.5,uv-.5)*.22*effects.z;float n=fract(sin(dot(gl_FragCoord.xy,vec2(12.9898,78.233)))*43758.5453)-.5;c+=n*.003*effects.z;c*=vec3(1.,1.-.009*effects.z,1.-.025*effects.z);float a=transparency.x>.5?clamp(center.a*transparency.y,0.,1.):1.;outputColor=vec4(encode(c)*a,a);}`;

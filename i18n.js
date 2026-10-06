@@ -1,6 +1,6 @@
 // Chinese source strings are the stable keys. User photo names are never translated.
 export const english={
-  '暗室 · 幻灯放映':'Slide Ritual · Darkroom',
+  '虚拟放映室':'Slide Ritual · Darkroom',
   '墙上的投影':'Projection on the wall','当前照片的实时投影':'Live projection of the current photo',
   '从后方观看的 Leica P150 幻灯机，前景虚焦，右侧为机械片匣':'Rear view of a Leica P150 projector, softly out of focus, with the slide tray on the right',
   '放映控制':'Projection controls','悬浮控制栏':'Floating controls','选择照片文件夹':'Choose a photo folder',
@@ -79,7 +79,7 @@ export function createI18n({document=globalThis.document,navigator=globalThis.na
   function apply(){
     language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
     document.documentElement.lang=language;
-    document.title=t('暗室 · 幻灯放映');
+    document.title=t('虚拟放映室');
     for(const binding of bindings)if(binding.node.isConnected)binding.node.nodeValue=binding.prefix+t(binding.key)+binding.suffix;
     for(const binding of attributes)binding.element.setAttribute(binding.attribute,t(binding.key));
     if(select)select.value=preference;for(const callback of listeners)callback(language);

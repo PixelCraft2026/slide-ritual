@@ -12,6 +12,7 @@ A browser-based photo viewer inspired by the **Leica P150** slide projector. War
 
 - A 3D projector with lamp warmup, an animated slide magazine, and recorded slide-change sound.
 - Photo-responsive wall lighting, a subtle light beam, floating dust, and adjustable focus.
+- Continuous slide motion within a fixed octagonal aperture, with subtle GPU motion blur.
 - Folder import, automatic playback, fullscreen, and mobile layouts, with controls that hide while you watch.
 - HDR support, including Radiance `.hdr` / `.rgbe`, with SDR fallback.
 - Local photo processing: imported photographs stay in your browser and are never uploaded.
@@ -26,7 +27,7 @@ Use **← / →** to change photographs, **Space** to play or pause, **F** for f
 
 JPEG, PNG, WebP, and AVIF support depends on browser decoding. HDR output requires a compatible display, system settings, and browser; otherwise, the viewer uses SDR.
 
-On compatible WebGPU HDR browsers, Adobe gain-map JPEGs briefly brighten during entry using a reconstructed HDR preview, then return to the original native HDR image. **Lighting → HDR entry exposure** adjusts the effect from 0 to +2 EV (default +1 EV). Other native HDR formats retain browser rendering.
+On compatible WebGPU HDR browsers, Adobe gain-map JPEGs use a reconstructed HDR preview for motion blur and a brief entry brightening, then return to the original native HDR image. **Lighting → HDR entry exposure** adjusts the effect from 0 to +2 EV (default +1 EV). Other native HDR formats retain browser rendering.
 
 ## Run locally
 
