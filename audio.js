@@ -1,29 +1,58 @@
+const audioSettled=(work,timeout)=>new Promise(resolve=>{
+  const timer=setTimeout(()=>resolve(false),timeout);
+  Promise.resolve(work).then(()=>{clearTimeout(timer);resolve(true);},()=>{clearTimeout(timer);resolve(false);});
+});
 export class ProjectorAudio {
-  constructor(){this.volume=.55;this.fanVolume=.18;this.enabled=true;this.buffers={};this.active=new Set();}
-  async unlock(){
-    if(!this.context){
-      const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;
-      this.context=new AudioCtx();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(this.context.destination);
-      this.fanMaster=this.context.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(this.context.destination);
-      this.loading=Promise.all(['advance','fan'].map(async name=>{try{const response=await fetch(`assets/${name}.wav`);if(!response.ok)throw new Error('Audio file missing');this.buffers[name]=await this.context.decodeAudioData(await response.arrayBuffer());}catch(error){console.info('Reference audio fallback:',error.message);}}));
-    }
-    await this.context.resume();await this.loading;
+  constructor(){this.volume=.55;this.fanVolume=.18;this.enabled=true;this.buffers={};this.files={};this.active=new Set();this.fanWanted=false;this.background=false;this.needsRecovery=false;this.lifecycle=0;this.resumeTimeout=600;this.probeDelay=80;}
+  createContext(){
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return null;
+    this.dropContext();
+    try{
+      const ctx=this.context=new AudioCtx();this.lifecycle++;this.needsRecovery=false;
+      this.master=ctx.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(ctx.destination);
+      this.fanMaster=ctx.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(ctx.destination);
+      this.loading=Promise.all(['advance','fan'].map(async name=>{
+        if(this.buffers[name])return;
+        try{
+          this.files[name]??=(async()=>{const response=await fetch(`assets/${name}.wav`);if(!response.ok)throw new Error('Audio file missing');return response.arrayBuffer();})();
+          this.buffers[name]=await ctx.decodeAudioData((await this.files[name]).slice(0));
+        }catch(error){delete this.files[name];console.info('Reference audio fallback:',error.message);}
+      }));return ctx;
+    }catch{this.needsRecovery=true;return null;}
+  }
+  async unlock({rebuild=false}={}){
+    if((rebuild||!this.context)&&!this.createContext())return false;
+    // resume is invoked synchronously in the gesture, before loading awaits.
+    const ready=await this.resume({gesture:true});await audioSettled(this.loading,4000);
+    if(ready&&this.fanWanted)this.startFan();return ready;
+  }
+  dropContext(){
+    const old=this.context;if(!old)return;
+    this.stopAdvance();this.stopFanNode(true);this.master?.disconnect();this.fanMaster?.disconnect();
+    this.context=null;this.master=null;this.fanMaster=null;this.recovery=null;
+    try{old.close().catch(()=>{});}catch{/* Already closed. */}
   }
   fadeGain(param,target,duration=.08){const t=this.context.currentTime;param.cancelScheduledValues(t);param.setValueAtTime(param.value,t);param.linearRampToValueAtTime(target,t+duration);}
   setVolume(volume){this.volume=volume;if(this.master)this.fadeGain(this.master.gain,this.enabled?volume:0);}
   setFanVolume(volume){this.fanVolume=Math.max(0,Math.min(1,volume));if(this.fan){this.fanGain.gain.cancelScheduledValues(this.context.currentTime);this.fanGain.gain.setTargetAtTime(this.fanVolume*.55,this.context.currentTime,.12);}}
-  setEnabled(enabled){this.enabled=enabled;this.setVolume(this.volume);if(this.fanMaster)this.fadeGain(this.fanMaster.gain,enabled?1:0);}
+  setEnabled(enabled){this.enabled=enabled;this.setVolume(this.volume);if(this.fanMaster)this.fadeGain(this.fanMaster.gain,enabled?1:0);if(!enabled)this.stopFanNode(true);}
   startFan(){
-    if(!this.context||this.fan)return;
+    this.fanWanted=true;if(!this.context||this.fan||!this.enabled||this.background||this.context.state!=='running')return;
     const ctx=this.context;this.fanGain=ctx.createGain();this.fanGain.gain.setValueAtTime(0,ctx.currentTime);this.fanGain.gain.linearRampToValueAtTime(this.fanVolume*.55,ctx.currentTime+1.5);this.fanGain.connect(this.fanMaster);
     this.fan=ctx.createBufferSource();this.fan.buffer=this.buffers.fan||this.noiseFallback();this.fan.loop=true;
     this.fan.connect(this.fanGain);this.fan.start();
   }
   stopFan(){
+    this.fanWanted=false;this.stopFanNode();
+  }
+  stopFanNode(immediate=false){
     if(!this.fan)return;
-    const fan=this.fan,gain=this.fanGain;this.fan=null;
-    gain.gain.cancelScheduledValues(this.context.currentTime);gain.gain.setTargetAtTime(0,this.context.currentTime,.25);
-    fan.stop(this.context.currentTime+1.5);fan.onended=()=>{fan.disconnect();gain.disconnect();};
+    const fan=this.fan,gain=this.fanGain;this.fan=null;this.fanGain=null;let cleaned=false;
+    const clean=()=>{if(!cleaned){cleaned=true;fan.disconnect();gain.disconnect();}};fan.onended=clean;
+    try{
+      if(immediate){fan.stop();clean();}
+      else{gain.gain.cancelScheduledValues(this.context.currentTime);gain.gain.setTargetAtTime(0,this.context.currentTime,.25);fan.stop(this.context.currentTime+1.5);}
+    }catch{clean();}
   }
   click(){if(!this.context)return;const ctx=this.context;const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.setValueAtTime(180,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(48,ctx.currentTime+.05);gain.gain.setValueAtTime(.04,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.07);osc.connect(gain);gain.connect(this.master);osc.start();osc.stop(ctx.currentTime+.08);osc.onended=()=>{osc.disconnect();gain.disconnect();};}
   noiseFallback(){
@@ -42,6 +71,33 @@ export class ProjectorAudio {
     src.onended=()=>{this.active.delete(src);src.disconnect();lowpass.disconnect();shelf.disconnect();gain.disconnect();};
   }
   stopAdvance(){for(const src of this.active){try{src.stop();}catch{}}this.active.clear();}
-  suspend(){if(this.context)this.context.suspend();}
-  resume(){if(this.context)this.context.resume().catch(()=>{});}
+  suspend(){
+    this.background=true;this.needsRecovery=Boolean(this.context);this.lifecycle++;this.recovery=null;
+    // Retain intent, but retire old sources so sounds are not replayed later.
+    this.stopAdvance();this.stopFanNode(true);
+    if(this.context)try{this.context.suspend().catch(()=>{});}catch{/* System interruption. */}
+  }
+  async resume({gesture=false}={}){
+    if(globalThis.document?.hidden)return false;this.background=false;
+    if(!this.context||!this.enabled)return false;
+    if(this.context.state==='closed'||(gesture&&(this.needsRecovery||this.context.state==='interrupted'))){
+      if(!gesture){this.needsRecovery=true;return false;}
+      // Rebuild in this gesture. A timed-out resume cannot consume the tap or
+      // leave the sound switch permanently waiting for Safari's old promise.
+      if(!this.createContext())return false;
+    }
+    const ctx=this.context,epoch=this.lifecycle;
+    if(this.recovery?.context===ctx&&this.recovery.epoch===epoch)return this.recovery.pending;
+    const pending=(async()=>{
+      let resumed=false;try{resumed=await audioSettled(ctx.resume(),this.resumeTimeout);}catch{/* Rebuild on a later gesture. */}
+      const clock=ctx.currentTime;
+      if(resumed)await new Promise(resolve=>setTimeout(resolve,this.probeDelay));
+      if(this.context!==ctx||this.lifecycle!==epoch||this.background)return false;
+      // Safari can report running while its audio clock is frozen.
+      const healthy=resumed&&ctx.state==='running'&&ctx.currentTime>clock;
+      this.needsRecovery=!healthy;if(healthy&&this.enabled&&this.fanWanted)this.startFan();return healthy;
+    })();
+    this.recovery={context:ctx,epoch,pending};
+    try{return await pending;}finally{if(this.recovery?.pending===pending)this.recovery=null;}
+  }
 }

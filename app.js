@@ -94,6 +94,14 @@ function renderTray(){
   });
   updateUI();
 }
+function revealCurrentThumbnail(index){
+  const tray=$('filmstrip'),current=tray.querySelector(`[data-index="${index}"]`);if(!current||!tray.clientWidth)return;
+  // Scroll only the horizontal strip. scrollIntoView also moves the settings
+  // panel vertically when its photo section is outside the current view.
+  const bounds=tray.getBoundingClientRect(),photo=current.getBoundingClientRect();
+  const delta=photo.left<bounds.left?photo.left-bounds.left:photo.right>bounds.right?photo.right-bounds.right:0;
+  if(delta)tray.scrollTo({left:tray.scrollLeft+delta,behavior:reduceMotion.matches?'instant':'smooth'});
+}
 function presentationLayout(slide=state.slides[state.index],apertureMode=state.aperture){
   const stage=document.querySelector('.projection-stage');
   const ratio=slide?(slide.width/slide.height):1.5;
@@ -276,7 +284,7 @@ async function goTo(index){
     await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();
-    const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
+    revealCurrentThumbnail(index);
     scheduleAuto();
   }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(t('无法放映：{error}',{error:t(error.message)}));}
 }
@@ -342,7 +350,7 @@ $('folderInput').addEventListener('change',e=>importFiles(e.target.files,{folder
 $('filesBtn').addEventListener('click',()=>{audio.unlock().catch(()=>{});$('fileInput').click();});
 $('fileInput').addEventListener('change',e=>importFiles(e.target.files));$('clearBtn').addEventListener('click',clearTray);
 $('settingsBtn').addEventListener('click',()=>toggleSettings());$('closeSettings').addEventListener('click',()=>toggleSettings(false));$('rangeBadge').addEventListener('click',()=>toggleSettings(true));
-$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
+$('soundBtn').addEventListener('click',()=>{audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');if(audio.enabled)audio.unlock({rebuild:true}).catch(()=>{});});
 $('immersiveBtn').addEventListener('click',immersive);screen.addEventListener('dblclick',immersive);
 for(const event of ['pointermove','pointerdown','keydown','wheel','focusin'])document.addEventListener(event,showImmersiveControls,{passive:true});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label',t('进入全屏'));fitScreen();}});
@@ -403,6 +411,11 @@ document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dro
 document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;if(e.dataTransfer?.files.length)importFiles(e.dataTransfer.files);});
 window.addEventListener('resize',fitScreen);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(autoTimer);audio.suspend();}else{if(state.on)audio.resume();scheduleAuto();}});
+window.addEventListener('pagehide',()=>audio.suspend());
+window.addEventListener('pageshow',()=>{if(state.on)audio.resume();});
+// A Safari audio interruption may require a fresh context in a user gesture.
+// Retry on the next tap/key without changing the user's sound preference.
+for(const event of ['pointerdown','keydown'])document.addEventListener(event,()=>{if(state.on&&audio.enabled&&audio.context&&!document.hidden)audio.resume({gesture:true});},{capture:true,passive:true});
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();

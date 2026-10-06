@@ -643,32 +643,61 @@ class ProjectionRenderer {
 }
 
 
+const audioSettled=(work,timeout)=>new Promise(resolve=>{
+  const timer=setTimeout(()=>resolve(false),timeout);
+  Promise.resolve(work).then(()=>{clearTimeout(timer);resolve(true);},()=>{clearTimeout(timer);resolve(false);});
+});
 class ProjectorAudio {
-  constructor(){this.volume=.55;this.fanVolume=.18;this.enabled=true;this.buffers={};this.active=new Set();}
-  async unlock(){
-    if(!this.context){
-      const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return;
-      this.context=new AudioCtx();this.master=this.context.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(this.context.destination);
-      this.fanMaster=this.context.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(this.context.destination);
-      this.loading=Promise.all(['advance','fan'].map(async name=>{try{const response=await fetch(EMBEDDED_AUDIO[name]);if(!response.ok)throw new Error('Audio file missing');this.buffers[name]=await this.context.decodeAudioData(await response.arrayBuffer());}catch(error){console.info('Reference audio fallback:',error.message);}}));
-    }
-    await this.context.resume();await this.loading;
+  constructor(){this.volume=.55;this.fanVolume=.18;this.enabled=true;this.buffers={};this.files={};this.active=new Set();this.fanWanted=false;this.background=false;this.needsRecovery=false;this.lifecycle=0;this.resumeTimeout=600;this.probeDelay=80;}
+  createContext(){
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return null;
+    this.dropContext();
+    try{
+      const ctx=this.context=new AudioCtx();this.lifecycle++;this.needsRecovery=false;
+      this.master=ctx.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(ctx.destination);
+      this.fanMaster=ctx.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(ctx.destination);
+      this.loading=Promise.all(['advance','fan'].map(async name=>{
+        if(this.buffers[name])return;
+        try{
+          this.files[name]??=(async()=>{const response=await fetch(EMBEDDED_AUDIO[name]);if(!response.ok)throw new Error('Audio file missing');return response.arrayBuffer();})();
+          this.buffers[name]=await ctx.decodeAudioData((await this.files[name]).slice(0));
+        }catch(error){delete this.files[name];console.info('Reference audio fallback:',error.message);}
+      }));return ctx;
+    }catch{this.needsRecovery=true;return null;}
+  }
+  async unlock({rebuild=false}={}){
+    if((rebuild||!this.context)&&!this.createContext())return false;
+    // resume is invoked synchronously in the gesture, before loading awaits.
+    const ready=await this.resume({gesture:true});await audioSettled(this.loading,4000);
+    if(ready&&this.fanWanted)this.startFan();return ready;
+  }
+  dropContext(){
+    const old=this.context;if(!old)return;
+    this.stopAdvance();this.stopFanNode(true);this.master?.disconnect();this.fanMaster?.disconnect();
+    this.context=null;this.master=null;this.fanMaster=null;this.recovery=null;
+    try{old.close().catch(()=>{});}catch{/* Already closed. */}
   }
   fadeGain(param,target,duration=.08){const t=this.context.currentTime;param.cancelScheduledValues(t);param.setValueAtTime(param.value,t);param.linearRampToValueAtTime(target,t+duration);}
   setVolume(volume){this.volume=volume;if(this.master)this.fadeGain(this.master.gain,this.enabled?volume:0);}
   setFanVolume(volume){this.fanVolume=Math.max(0,Math.min(1,volume));if(this.fan){this.fanGain.gain.cancelScheduledValues(this.context.currentTime);this.fanGain.gain.setTargetAtTime(this.fanVolume*.55,this.context.currentTime,.12);}}
-  setEnabled(enabled){this.enabled=enabled;this.setVolume(this.volume);if(this.fanMaster)this.fadeGain(this.fanMaster.gain,enabled?1:0);}
+  setEnabled(enabled){this.enabled=enabled;this.setVolume(this.volume);if(this.fanMaster)this.fadeGain(this.fanMaster.gain,enabled?1:0);if(!enabled)this.stopFanNode(true);}
   startFan(){
-    if(!this.context||this.fan)return;
+    this.fanWanted=true;if(!this.context||this.fan||!this.enabled||this.background||this.context.state!=='running')return;
     const ctx=this.context;this.fanGain=ctx.createGain();this.fanGain.gain.setValueAtTime(0,ctx.currentTime);this.fanGain.gain.linearRampToValueAtTime(this.fanVolume*.55,ctx.currentTime+1.5);this.fanGain.connect(this.fanMaster);
     this.fan=ctx.createBufferSource();this.fan.buffer=this.buffers.fan||this.noiseFallback();this.fan.loop=true;
     this.fan.connect(this.fanGain);this.fan.start();
   }
   stopFan(){
+    this.fanWanted=false;this.stopFanNode();
+  }
+  stopFanNode(immediate=false){
     if(!this.fan)return;
-    const fan=this.fan,gain=this.fanGain;this.fan=null;
-    gain.gain.cancelScheduledValues(this.context.currentTime);gain.gain.setTargetAtTime(0,this.context.currentTime,.25);
-    fan.stop(this.context.currentTime+1.5);fan.onended=()=>{fan.disconnect();gain.disconnect();};
+    const fan=this.fan,gain=this.fanGain;this.fan=null;this.fanGain=null;let cleaned=false;
+    const clean=()=>{if(!cleaned){cleaned=true;fan.disconnect();gain.disconnect();}};fan.onended=clean;
+    try{
+      if(immediate){fan.stop();clean();}
+      else{gain.gain.cancelScheduledValues(this.context.currentTime);gain.gain.setTargetAtTime(0,this.context.currentTime,.25);fan.stop(this.context.currentTime+1.5);}
+    }catch{clean();}
   }
   click(){if(!this.context)return;const ctx=this.context;const osc=ctx.createOscillator(),gain=ctx.createGain();osc.type='triangle';osc.frequency.setValueAtTime(180,ctx.currentTime);osc.frequency.exponentialRampToValueAtTime(48,ctx.currentTime+.05);gain.gain.setValueAtTime(.04,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.07);osc.connect(gain);gain.connect(this.master);osc.start();osc.stop(ctx.currentTime+.08);osc.onended=()=>{osc.disconnect();gain.disconnect();};}
   noiseFallback(){
@@ -687,8 +716,35 @@ class ProjectorAudio {
     src.onended=()=>{this.active.delete(src);src.disconnect();lowpass.disconnect();shelf.disconnect();gain.disconnect();};
   }
   stopAdvance(){for(const src of this.active){try{src.stop();}catch{}}this.active.clear();}
-  suspend(){if(this.context)this.context.suspend();}
-  resume(){if(this.context)this.context.resume().catch(()=>{});}
+  suspend(){
+    this.background=true;this.needsRecovery=Boolean(this.context);this.lifecycle++;this.recovery=null;
+    // Retain intent, but retire old sources so sounds are not replayed later.
+    this.stopAdvance();this.stopFanNode(true);
+    if(this.context)try{this.context.suspend().catch(()=>{});}catch{/* System interruption. */}
+  }
+  async resume({gesture=false}={}){
+    if(globalThis.document?.hidden)return false;this.background=false;
+    if(!this.context||!this.enabled)return false;
+    if(this.context.state==='closed'||(gesture&&(this.needsRecovery||this.context.state==='interrupted'))){
+      if(!gesture){this.needsRecovery=true;return false;}
+      // Rebuild in this gesture. A timed-out resume cannot consume the tap or
+      // leave the sound switch permanently waiting for Safari's old promise.
+      if(!this.createContext())return false;
+    }
+    const ctx=this.context,epoch=this.lifecycle;
+    if(this.recovery?.context===ctx&&this.recovery.epoch===epoch)return this.recovery.pending;
+    const pending=(async()=>{
+      let resumed=false;try{resumed=await audioSettled(ctx.resume(),this.resumeTimeout);}catch{/* Rebuild on a later gesture. */}
+      const clock=ctx.currentTime;
+      if(resumed)await new Promise(resolve=>setTimeout(resolve,this.probeDelay));
+      if(this.context!==ctx||this.lifecycle!==epoch||this.background)return false;
+      // Safari can report running while its audio clock is frozen.
+      const healthy=resumed&&ctx.state==='running'&&ctx.currentTime>clock;
+      this.needsRecovery=!healthy;if(healthy&&this.enabled&&this.fanWanted)this.startFan();return healthy;
+    })();
+    this.recovery={context:ctx,epoch,pending};
+    try{return await pending;}finally{if(this.recovery?.pending===pending)this.recovery=null;}
+  }
 }
 
 
@@ -1950,6 +2006,14 @@ function renderTray(){
   });
   updateUI();
 }
+function revealCurrentThumbnail(index){
+  const tray=$('filmstrip'),current=tray.querySelector(`[data-index="${index}"]`);if(!current||!tray.clientWidth)return;
+  // Scroll only the horizontal strip. scrollIntoView also moves the settings
+  // panel vertically when its photo section is outside the current view.
+  const bounds=tray.getBoundingClientRect(),photo=current.getBoundingClientRect();
+  const delta=photo.left<bounds.left?photo.left-bounds.left:photo.right>bounds.right?photo.right-bounds.right:0;
+  if(delta)tray.scrollTo({left:tray.scrollLeft+delta,behavior:reduceMotion.matches?'instant':'smooth'});
+}
 function presentationLayout(slide=state.slides[state.index],apertureMode=state.aperture){
   const stage=document.querySelector('.projection-stage');
   const ratio=slide?(slide.width/slide.height):1.5;
@@ -2132,7 +2196,7 @@ async function goTo(index){
     await animateTransport(epoch,reverse,false,()=>{state.index=index;present(slide,loaded,prepared);updateMeta();});
     if(epoch!==state.epoch)return;
     resetTransition();state.busy=false;updateUI();
-    const current=$('filmstrip').querySelector(`[data-index="${index}"]`);current?.scrollIntoView({behavior:reduceMotion.matches?'instant':'smooth',block:'nearest',inline:'nearest'});
+    revealCurrentThumbnail(index);
     scheduleAuto();
   }catch(error){if(epoch!==state.epoch)return;resetTransition();state.busy=false;stopAuto();updateUI();toast(t('无法放映：{error}',{error:t(error.message)}));}
 }
@@ -2198,7 +2262,7 @@ $('folderInput').addEventListener('change',e=>importFiles(e.target.files,{folder
 $('filesBtn').addEventListener('click',()=>{audio.unlock().catch(()=>{});$('fileInput').click();});
 $('fileInput').addEventListener('change',e=>importFiles(e.target.files));$('clearBtn').addEventListener('click',clearTray);
 $('settingsBtn').addEventListener('click',()=>toggleSettings());$('closeSettings').addEventListener('click',()=>toggleSettings(false));$('rangeBadge').addEventListener('click',()=>toggleSettings(true));
-$('soundBtn').addEventListener('click',async()=>{await audio.unlock();audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');});
+$('soundBtn').addEventListener('click',()=>{audio.setEnabled(!audio.enabled);$('soundBtn').setAttribute('aria-pressed',String(audio.enabled));$('soundBtn').setAttribute('aria-label',t(audio.enabled?'关闭机械声音':'开启机械声音'));$('soundBtn').style.opacity=audio.enabled?'1':'.4';toast(audio.enabled?'机械声音已开启':'机械声音已关闭');if(audio.enabled)audio.unlock({rebuild:true}).catch(()=>{});});
 $('immersiveBtn').addEventListener('click',immersive);screen.addEventListener('dblclick',immersive);
 for(const event of ['pointermove','pointerdown','keydown','wheel','focusin'])document.addEventListener(event,showImmersiveControls,{passive:true});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label',t('进入全屏'));fitScreen();}});
@@ -2259,6 +2323,11 @@ document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dro
 document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;if(e.dataTransfer?.files.length)importFiles(e.dataTransfer.files);});
 window.addEventListener('resize',fitScreen);
 document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(autoTimer);audio.suspend();}else{if(state.on)audio.resume();scheduleAuto();}});
+window.addEventListener('pagehide',()=>audio.suspend());
+window.addEventListener('pageshow',()=>{if(state.on)audio.resume();});
+// A Safari audio interruption may require a fresh context in a user gesture.
+// Retry on the next tap/key without changing the user's sound preference.
+for(const event of ['pointerdown','keydown'])document.addEventListener(event,()=>{if(state.on&&audio.enabled&&audio.context&&!document.hidden)audio.resume({gesture:true});},{capture:true,passive:true});
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();
