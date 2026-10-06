@@ -24,9 +24,9 @@ The photographs use the [Unsplash License](https://unsplash.com/license), rather
 
 ## Slide-change recording / 过片录音
 
-`assets/advance.wav` and its playback copy, `assets/advance.mp3`, were extracted from the recording supplied on 7 October 2026. A single mechanical cycle is trimmed and fitted to the slide-change timing. They are excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
+`assets/advance.wav`, `assets/advance-startup.wav`, and their MP3 playback copies were extracted from the latest recording supplied on 7 October 2026. A single mechanical cycle is trimmed and fitted to the regular and opening slide-change timings while preserving pitch. They are excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
 
-`assets/advance.wav` 及其播放副本 `assets/advance.mp3` 截取自 2026 年 10 月 7 日提供的录音，采用单次机械动作并适配过片时长。不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
+`assets/advance.wav`、`assets/advance-startup.wav` 及对应的 MP3 播放副本截取自 2026 年 10 月 7 日最后提供的录音，采用单次机械动作，保持音高并分别适配普通与开场过片时长。不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
 
 The fan source, `assets/fan.wav`, is synthesized by the project's `tools/prepare-fan.py`, rather than taken from this recording. `assets/fan.mp3` is its compressed playback copy. Lossless WAV sources stay in the repository; the web and offline viewers use MP3 playback copies.
 

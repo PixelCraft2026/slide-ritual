@@ -8,7 +8,7 @@ export class ProjectorAudio {
     this.files[name]??=(async()=>{const response=await fetch(`assets/${name}.mp3`);if(!response.ok)throw new Error('Audio file missing');return response.arrayBuffer();})();
     try{return await this.files[name];}catch(error){delete this.files[name];throw error;}
   }
-  preload(){return Promise.all(['advance','fan'].map(name=>this.loadFile(name).catch(()=>null)));}
+  preload(){return Promise.all(['advance','advance-startup','fan'].map(name=>this.loadFile(name).catch(()=>null)));}
   createContext(){
     const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return null;
     this.dropContext();
@@ -17,7 +17,7 @@ export class ProjectorAudio {
       this.master=ctx.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(ctx.destination);
       this.fanMaster=ctx.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(ctx.destination);
       this.fanLoading=!this.buffers.fan;
-      this.loading=Promise.all(['advance','fan'].map(async name=>{
+      this.loading=Promise.all(['advance','advance-startup','fan'].map(async name=>{
         try{
           if(!this.buffers[name])this.buffers[name]=await ctx.decodeAudioData((await this.loadFile(name)).slice(0));
         }catch(error){console.info('Reference audio fallback:',error.message);}
@@ -68,12 +68,15 @@ export class ProjectorAudio {
   }
   advance(reverse=false,duration=1.5){
     if(!this.context)return;
-    if(!this.buffers.advance){this.click();return;}
-    const src=this.context.createBufferSource();src.buffer=this.buffers.advance;src.playbackRate.value=src.buffer.duration/duration;
+    const opening=duration>1.5&&this.buffers['advance-startup'],buffer=opening||this.buffers.advance;
+    if(!buffer){this.click();return;}
+    // Duration variants are time-stretched offline while preserving pitch.
+    // Changing playbackRate here would lower the pitch in the longer opening.
+    const src=this.context.createBufferSource();src.buffer=buffer;src.playbackRate.value=1;
     const lowpass=this.context.createBiquadFilter();lowpass.type='lowpass';lowpass.frequency.value=2200;lowpass.Q.value=.55;
     const shelf=this.context.createBiquadFilter();shelf.type='highshelf';shelf.frequency.value=1300;shelf.gain.value=-5;
     // Calibrated against the previous recording through this filter chain.
-    const gain=this.context.createGain();gain.gain.value=2.37;src.connect(lowpass);lowpass.connect(shelf);shelf.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
+    const gain=this.context.createGain();gain.gain.value=opening?1.288:1.245;src.connect(lowpass);lowpass.connect(shelf);shelf.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
     src.onended=()=>{this.active.delete(src);src.disconnect();lowpass.disconnect();shelf.disconnect();gain.disconnect();};
   }
   stopAdvance(){for(const src of this.active){try{src.stop();}catch{}}this.active.clear();}

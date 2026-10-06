@@ -18,6 +18,8 @@ test('a cold photo and stalled audio cannot delay the initial lamp response',asy
     assert.equal(h.env.state.on,true);assert.equal(h.env.state.busy,true);
     assert.equal(h.env.room.dataset.phase,'warmup');assert.equal(h.env.room.style['--lamp'],'.25');
     assert.equal(c.audio.wanted,true);assert.equal(c.holds[0].ms,550);
+    assert.equal(h.env.nextDownload.slide,h.env.state.slides[1]);
+    assert.equal(h.env.slideLoads.has(h.env.state.slides[1]),false,'opening fetches the next photo without starting its pixel work');
     c.holds[0].resolve();await turn();
     assert.equal(h.env.room.dataset.phase,'aperture');assert.equal(c.holds[1].ms,5000);
     assert.equal(h.env.room.style['--lamp'],'1');

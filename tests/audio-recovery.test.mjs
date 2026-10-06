@@ -9,6 +9,7 @@ function audioHarness(plans=[],loaders={}){
     constructor(){this.plan=plans[contexts.length]||{};this.state='suspended';this.born=Date.now();this.sampleRate=100;this.destination={};this.sources=[];contexts.push(this);}
     get currentTime(){return this.state==='running'&&!this.plan.frozen?(Date.now()-this.born)/1000:0;}
     createGain(){return{gain:param(),connect(){},disconnect(){}};}
+    createBiquadFilter(){return{frequency:param(),Q:param(),gain:param(),connect(){},disconnect(){}};}
     createBufferSource(){const source={playbackRate:param(),connect(){},disconnect(){this.disconnected=true;},start(){this.started=true;},stop(){this.stopped=true;this.onended?.();}};this.sources.push(source);return source;}
     createBuffer(channels,length){return{duration:8,getChannelData:()=>new Float32Array(length)};}
     decodeAudioData(){return Promise.resolve({duration:8});}
@@ -16,7 +17,7 @@ function audioHarness(plans=[],loaders={}){
     suspend(){this.state='suspended';return this.plan.pendingSuspend?new Promise(()=>{}):Promise.resolve();}
     close(){this.state='closed';this.closed=true;return Promise.resolve();}
   }
-  globalThis.window={AudioContext:Context};globalThis.document={hidden:false};globalThis.fetch=async url=>{fetches++;const name=url.match(/assets\/(\w+)\./)[1];return loaders[name]?loaders[name]():{ok:true,arrayBuffer:async()=>new ArrayBuffer(8)};};
+  globalThis.window={AudioContext:Context};globalThis.document={hidden:false};globalThis.fetch=async url=>{fetches++;const name=url.match(/assets\/([^/.]+)\./)[1];return loaders[name]?loaders[name]():{ok:true,arrayBuffer:async()=>new ArrayBuffer(8)};};
   const audio=new ProjectorAudio();audio.resumeTimeout=20;audio.probeDelay=8;
   return{audio,contexts,get fetches(){return fetches;},close(){audio.dropContext();Object.assign(globalThis,previous);}};
 }
@@ -36,7 +37,7 @@ test('a never-resolving Safari resume settles and the next gesture recreates its
     await h.audio.unlock();h.audio.startFan();h.audio.suspend();h.contexts[0].plan.pending=true;
     assert.equal(await h.audio.resume(),false);assert.equal(h.audio.needsRecovery,true);
     assert.equal(await h.audio.unlock(),true);assert.equal(h.contexts[0].closed,true);assert.equal(h.contexts.length,2);
-    assert.ok(h.contexts[1].sources.includes(h.audio.fan));assert.equal(h.fetches,2);
+    assert.ok(h.contexts[1].sources.includes(h.audio.fan));assert.equal(h.fetches,3);
   }finally{h.close();}
 });
 
@@ -79,7 +80,7 @@ test('explicitly enabling sound rebuilds even a context whose state and clock fa
   const h=audioHarness();try{
     await h.audio.unlock();h.audio.startFan();h.audio.setEnabled(false);h.audio.setEnabled(true);
     const ready=h.audio.unlock({rebuild:true});assert.equal(h.contexts.length,2,'replacement is created in the button gesture');
-    assert.equal(await ready,true);assert.equal(h.fetches,2);assert.equal(h.contexts[0].closed,true);assert.ok(h.audio.fan);
+    assert.equal(await ready,true);assert.equal(h.fetches,3);assert.equal(h.contexts[0].closed,true);assert.ok(h.audio.fan);
   }finally{h.close();}
 });
 
@@ -88,11 +89,11 @@ test('cold audio download does not block gesture unlocking and fan loads indepen
   const h=audioHarness([],{fan:()=>new Promise(r=>{releaseFan=r;}),advance:()=>new Promise(r=>{releaseAdvance=r;})});
   try{
     const prefetch=h.audio.preload();assert.equal(await h.audio.unlock(),true);
-    h.audio.startFan();assert.equal(Boolean(h.audio.fan),false);assert.equal(h.fetches,2);
+    h.audio.startFan();assert.equal(Boolean(h.audio.fan),false);assert.equal(h.fetches,3);
     releaseFan({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});
     await new Promise(r=>setImmediate(r));assert.ok(h.audio.fan);assert.equal(h.audio.buffers.advance,undefined);
     releaseAdvance({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});await prefetch;await h.audio.loading;
-    assert.equal(h.fetches,2);assert.equal(h.contexts[0].sources.filter(s=>!s.stopped).length,1);
+    assert.equal(h.fetches,3);assert.equal(h.contexts[0].sources.filter(s=>!s.stopped).length,1);
   }finally{h.close();}
 });
 
@@ -102,5 +103,26 @@ test('a late fan download respects muting and a power-off request',async()=>{
     await h.audio.unlock();h.audio.startFan();h.audio.setEnabled(false);h.audio.stopFan();
     release({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});await h.audio.loading;
     assert.equal(Boolean(h.audio.fan),false);assert.equal(h.audio.fanWanted,false);assert.equal(h.audio.enabled,false);
+  }finally{h.close();}
+});
+
+test('normal and opening slide sounds select their duration variants at the original pitch',async()=>{
+  const h=audioHarness();try{
+    await h.audio.unlock();await h.audio.loading;
+    const normal={duration:1.5},opening={duration:1.85};
+    h.audio.buffers.advance=normal;h.audio.buffers['advance-startup']=opening;
+    h.audio.advance(false,1.5);h.audio.advance(false,1.85);h.audio.advance(true,1.5);
+    const sources=h.contexts[0].sources;
+    assert.deepEqual(sources.map(source=>source.buffer),[normal,opening,normal]);
+    assert.deepEqual(sources.map(source=>source.playbackRate.value),[1,1,1]);
+    h.audio.stopAdvance();assert.ok(sources.every(source=>source.stopped));
+  }finally{h.close();}
+});
+
+test('a missing opening variant falls back without slowing the normal recording',async()=>{
+  const h=audioHarness();try{
+    await h.audio.unlock();await h.audio.loading;delete h.audio.buffers['advance-startup'];
+    h.audio.advance(false,1.85);const source=h.contexts[0].sources[0];
+    assert.equal(source.buffer,h.audio.buffers.advance);assert.equal(source.playbackRate.value,1);
   }finally{h.close();}
 });

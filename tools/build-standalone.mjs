@@ -6,7 +6,7 @@ html=html.replace(/<link rel="(?:preload|modulepreload)"[^>]*>/g,'');
 html=html.replace('href="assets/favicon.svg"',`href="${data('assets/favicon.svg','image/svg+xml')}"`).replace('href="./"','href="#"');
 let js=['resample.js','hdr.js','pixels.js','renderer.js','audio.js','transition.js','scene.js','atmosphere.js','machine-light.js','native-projection.js','gain-map.js','i18n.js','app.js'].map(file=>readFileSync(file,'utf8').replace(/^import .*?;\s*$/gm,'').replace(/^export /gm,'')).join('\n\n');
 for(const name of ['alpine','woodland','evening'])js=js.replaceAll(`assets/${name}.jpg`,data(`assets/${name}.jpg`,'image/jpeg'));
-const sounds={advance:data('assets/advance.mp3','audio/mpeg'),fan:data('assets/fan.mp3','audio/mpeg')};
+const sounds={advance:data('assets/advance.mp3','audio/mpeg'),'advance-startup':data('assets/advance-startup.mp3','audio/mpeg'),fan:data('assets/fan.mp3','audio/mpeg')};
 js=`import * as THREE from '${data('vendor/three.module.js','text/javascript')}';\nconst EMBEDDED_AUDIO=${JSON.stringify(sounds)};\n${js}`.replace('fetch(`assets/${name}.mp3`)','fetch(EMBEDDED_AUDIO[name])');
 html=html.replace('<script type="module" src="app.js"></script>',`<script type="module">\n${js.replace(/<\/script/gi,'<\\/script')}\n</script>`);
 writeFileSync('darkroom.html',html);

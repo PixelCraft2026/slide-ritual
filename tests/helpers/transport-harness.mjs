@@ -51,16 +51,19 @@ export async function transportHarness(options={}){
   scene.lensPosition=()=>({x:720,y:740});scene.illuminate=()=>scene.draw();scene.mechanism=()=>scene.draw();scene.reset=()=>scene.draw();
   const wall=new Wall(canvas('wall')),air=new Air(canvas('air'));
   const machineLight={renderer:glow,resize(){if(critical())metrics.machineResizesDuringTransport++;},configure(hdr){glow.configure(hdr);},illuminate(){glow.draw();}};
-  const room=element('room'),screen=element('screen');element('photoY').value='-3';element('depth').value='4';element('focus').value='0';
+  const room=element('room'),screen=element('screen');element('photoY').value='-3';element('depth').value='4';element('focus').value='0';element('interval').value='4';
   const nativeProjection=new NativeProjection(element('opticalGate'),element('filmMotion'),element('texture'));
   if(options.nativePhotos)nativeProjection.exposure=element('native-exposure');
   env={$:element,t:(key,params)=>translate(key,'zh-CN',params),room,screen,native:element('native'),nativeProjection,renderer:photo,scene,wall,air,machineLight,decodeImage:options.decodeImage||decodeImage,state:{slides,index:0,on:true,auto:false,busy:false,importing:false,demo:false,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:true,ready:true,aperture:false},cache:new Map(),hdrQuery:{matches:Boolean(options.nativePhotos)},reduceMotion:{matches:false},exposure:1,transporting:false,layoutPending:false,projectionWidth:528,autoTimer:null,transitionFrame:null,finishTransition:null,toastTimer:null,hideTimer:null,powerIcon:'',audio:{advance(){},stopAdvance(){},stopFan(){}},mountProjection(){},showImmersiveControls(){},delay:async()=>{},setTimeout:()=>0,clearTimeout(){},...timing};
   const functions=text.slice(text.indexOf('function toast('),text.indexOf('async function importFiles('));
   env.slideLoads=new WeakMap();
+  env.nextDownload=null;env.upcoming=null;
   env.emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
   if(options.audio)env.audio=options.audio;
   if(options.delay)env.delay=options.delay;
-  const api=new Function('env',`with(env){${functions}\nreturn{power,loadSlide,goTo,fitScreen,present,resetTransition,preparePresentation:typeof preparePresentation==='function'?preparePresentation:null};}`)(env);
+  if(options.setTimeout)env.setTimeout=options.setTimeout;
+  if(options.clearTimeout)env.clearTimeout=options.clearTimeout;
+  const api=new Function('env',`with(env){${functions}\nreturn{power,loadSlide,goTo,fitScreen,present,resetTransition,scheduleAuto,stopAuto,toggleAuto,prepareUpcoming:typeof prepareUpcoming==='function'?prepareUpcoming:null,preloadNextDownload:typeof preloadNextDownload==='function'?preloadNextDownload:null,nextIndex:typeof nextIndex==='function'?nextIndex:null,preparePresentation:typeof preparePresentation==='function'?preparePresentation:null};}`)(env);
   const width=1200,height=800,data=new Float32Array(width*height*4);data.fill(.25);for(let i=3;i<data.length;i+=4)data[i]=1;
   const loaded={source:{data,width,height,hdr:false,colorSpace:'srgb'},native:Boolean(slides[0].hdrCandidate)};
   if(loaded.native){loaded.image=new Image();loaded.image.src=slides[0].url;await loaded.image.decode();}
@@ -72,8 +75,8 @@ export async function transportHarness(options={}){
     api.present(slides[0],loaded,await preparation);
   }else{await photo.prepare(loaded.source);api.present(slides[0],loaded);}
   const initialUploads=metrics.textureUploads,initialBytes=metrics.textureBytes;
-  async function goTo(index,control={}){
-    let done=false;const work=api.goTo(index).finally(()=>{done=true;});const start=metrics.frames.length;
+  async function run(pending,control={}){
+    let done=false;const work=Promise.resolve(pending).finally(()=>{done=true;});const start=metrics.frames.length;
     let firstFrame,interrupted=false,changedLayout=false;
     for(let step=0;!done&&step<10000;step++){
       if(rafs.size){clock.now+=options.frameStep||1000/60;const callbacks=[...rafs.entries()];for(const [id,fn]of callbacks){
@@ -88,8 +91,9 @@ export async function transportHarness(options={}){
       await new Promise(resolve=>setImmediate(resolve));
     }
     if(!done)throw new Error('Transport did not finish');await work;
-    if(!interrupted)assertIndex(index);return metrics.frames.slice(start);
+    return metrics.frames.slice(start);
   }
+  async function goTo(index,control={}){const frames=await run(api.goTo(index),control);if(env.state.on)assertIndex(index);return frames;}
   function assertIndex(index){if(env.state.index!==index||metrics.errors.length)throw new Error(`Transport failed: ${metrics.errors.join('; ')}`);}
-  return{env,metrics,api,goTo,summary(){return{frames:metrics.frames.length,maxSceneRendersPerFrame:Math.max(0,...metrics.frames.map(frame=>frame.sceneRenders)),maxProjectionRendersPerFrame:Math.max(0,...metrics.frames.map(frame=>frame.projectionRenders)),textureUploads:metrics.textureUploads-initialUploads,textureBytes:metrics.textureBytes-initialBytes,uploadsDuringTransport:metrics.uploadsDuringTransport,canvasCreatesDuringTransport:metrics.canvasCreatesDuringTransport,readbacksDuringTransport:metrics.readbacksDuringTransport,layoutReadsDuringTransport:metrics.layoutReadsDuringTransport,configurationsDuringTransport:metrics.configurationsDuringTransport,sceneResizesDuringTransport:metrics.sceneResizesDuringTransport,machineResizesDuringTransport:metrics.machineResizesDuringTransport,nativeSrcDuringTransport:metrics.nativeSrcDuringTransport,nativeStyleDuringTransport:metrics.nativeStyleDuringTransport,clipMasksDuringTransport:metrics.clipMasksDuringTransport,animationStarts:metrics.animationStarts};},async close(){while(photo.preparingProjection)await new Promise(resolve=>setImmediate(resolve));nativeProjection.reset();rafs.clear();for(const [name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];}}};
+  return{env,metrics,api,goTo,run,summary(){return{frames:metrics.frames.length,maxSceneRendersPerFrame:Math.max(0,...metrics.frames.map(frame=>frame.sceneRenders)),maxProjectionRendersPerFrame:Math.max(0,...metrics.frames.map(frame=>frame.projectionRenders)),textureUploads:metrics.textureUploads-initialUploads,textureBytes:metrics.textureBytes-initialBytes,uploadsDuringTransport:metrics.uploadsDuringTransport,canvasCreatesDuringTransport:metrics.canvasCreatesDuringTransport,readbacksDuringTransport:metrics.readbacksDuringTransport,layoutReadsDuringTransport:metrics.layoutReadsDuringTransport,configurationsDuringTransport:metrics.configurationsDuringTransport,sceneResizesDuringTransport:metrics.sceneResizesDuringTransport,machineResizesDuringTransport:metrics.machineResizesDuringTransport,nativeSrcDuringTransport:metrics.nativeSrcDuringTransport,nativeStyleDuringTransport:metrics.nativeStyleDuringTransport,clipMasksDuringTransport:metrics.clipMasksDuringTransport,animationStarts:metrics.animationStarts};},async close(){const ahead=env.upcoming?.pending;env.state.auto=false;env.state.epoch++;env.upcoming=null;await Promise.all(slides.map(slide=>env.slideLoads.get(slide)).filter(Boolean));if(ahead)await run(ahead);while(photo.preparingProjection)await new Promise(resolve=>setImmediate(resolve));nativeProjection.reset();rafs.clear();for(const [name,descriptor]of original){if(descriptor)Object.defineProperty(globalThis,name,descriptor);else delete globalThis[name];}}};
 }
