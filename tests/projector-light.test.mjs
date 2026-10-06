@@ -29,6 +29,24 @@ function housing(){
   s.buildWallReturn();return s;
 }
 
+test('front finish spans both rounded ends, stays flush and adds no shadow-casting volume',()=>{
+  const s=housing();s.frontTrimMaterial=new THREE.MeshStandardMaterial();s.meshes=0;
+  const shape=s.roundedShape(2.2,2.95,.07),trim=s.frontTrim(shape,.953,'front-finish');
+  trim.geometry.computeBoundingBox();const bounds=trim.geometry.boundingBox;
+  assert.ok(bounds.min.x<-1.08&&bounds.max.x>1.08,'finish reaches both curved ends rather than stopping short');
+  assert.ok(Math.abs(bounds.min.y)<1e-6&&Math.abs(bounds.max.y)<1e-6);assert.equal(trim.position.y,.953);
+  assert.ok(Math.abs(bounds.min.z+1.475)<1e-6);assert.ok(Math.abs(bounds.max.z+1.4475)<1e-6);
+  assert.equal(trim.castShadow,false);s.buildWallReturn();
+  assert.equal(s.wallOccluders.getObjectByName('front-finish'),undefined,'flush paint is omitted from the depth-only casing scene');
+  s.topSilver=new THREE.MeshPhysicalMaterial();s.topMaterials=[];
+  const edge=s.rolledEdge(shape,.953,.042,.095,'rounded-edge'),full=s.frontTrim(shape,.953,'complete-finish',16,edge);
+  full.geometry.computeBoundingBox();const curved=full.geometry.boundingBox;
+  assert.ok(curved.min.x<bounds.min.x-.03&&curved.max.x>bounds.max.x+.03,'finish includes the actual outer rounded rim at both ends');
+  assert.ok(curved.min.y<-.09&&curved.max.y<1e-6,'finish follows the existing downward curve without rising above the top');
+  assert.ok(Math.abs(curved.min.z+1.517)<.001);assert.ok(curved.max.z<=-1.4475+1e-6);
+  assert.equal(full.castShadow,false);s.buildWallReturn();assert.equal(s.wallOccluders.getObjectByName('complete-finish'),undefined);
+});
+
 test('wall return uses static opaque casing occlusion while leaving live mechanism casters independent',()=>{
   const s=housing(),copies=[];s.wallOccluders.traverse(o=>{if(o.isMesh)copies.push(o);});
   assert.equal(copies.length,1);assert.equal(copies[0].geometry,s.cover.geometry);

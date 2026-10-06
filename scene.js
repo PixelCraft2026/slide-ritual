@@ -25,6 +25,11 @@ export class ProjectorScene {
     this.topMaterials=[this.topSilver];
     this.black=new THREE.MeshStandardMaterial({color:0x141515,roughness:.72,metalness:.06,bumpMap:surface,bumpScale:.012});
     this.dark=new THREE.MeshStandardMaterial({color:0x080909,roughness:.48,metalness:.16});
+    // Keep the old left transport housing finish for the narrow front trims.
+    // Match the rear control panel's black plastic on the transport housing.
+    this.frontTrimMaterial=this.dark.clone();
+    this.frontTrimMaterial.polygonOffset=true;this.frontTrimMaterial.polygonOffsetFactor=-1;this.frontTrimMaterial.polygonOffsetUnits=-1;
+    this.transportPlastic=this.black.clone();
     this.gray=new THREE.MeshStandardMaterial({color:0x79766b,roughness:.65,metalness:.02});
     this.cream=new THREE.MeshStandardMaterial({color:0xc6bd9e,roughness:.76});
     this.meshes=0;this.buildBody();this.buildMagazine();this.buildSideLight();this.setTopReflectance(.70);this.pitch=0;
@@ -54,7 +59,7 @@ export class ProjectorScene {
       return depthMaterials.get(material);
     };
     const copy=node=>{
-      if(omitted.has(node))return null;
+      if(omitted.has(node)||node.userData.flushSurface)return null;
       let out;
       if(node.isMesh){
         const materials=Array.isArray(node.material)?node.material:[node.material];
@@ -90,6 +95,37 @@ export class ProjectorScene {
     // round is the only surface: no raised crown or overlapping highlight cap.
     const mat=this.topSilver.clone();this.topMaterials.push(mat);const mesh=new THREE.Mesh(g,mat);mesh.name=name;group.add(mesh);this.meshes++;return mesh;
   }
+  frontTrim(shape,y,name,curveSegments=16,edge){
+    // Inlay the finish into the complete front footprint, including both
+    // rounded ends. Polygon offset separates coplanar paint, not geometry.
+    const outline=shape.getPoints(curveSegments);if(outline[0].distanceTo(outline.at(-1))<1e-6)outline.pop();
+    const cutoff=Math.max(...outline.map(p=>p.y))-.0275,band=[];
+    for(let i=0;i<outline.length;i++){
+      const a=outline[i],b=outline[(i+1)%outline.length],insideA=a.y>=cutoff,insideB=b.y>=cutoff;
+      if(insideA)band.push(a.clone());
+      if(insideA!==insideB)band.push(a.clone().lerp(b,(cutoff-a.y)/(b.y-a.y)));
+    }
+    const patch=new THREE.Shape(band),flat=new THREE.ShapeGeometry(patch);flat.rotateX(-Math.PI/2);
+    // Continue the same finish over the existing quarter-round. Clip its
+    // triangles at the band boundary; all vertices remain on the casing.
+    let geometry=flat;
+    if(edge){
+      const face=flat.toNonIndexed(),positions=Array.from(face.attributes.position.array),normals=Array.from(face.attributes.normal.array);
+      const p=edge.geometry.attributes.position,n=edge.geometry.attributes.normal,indices=edge.geometry.index.array;
+      for(let i=0;i<indices.length;i+=3){
+        const triangle=Array.from(indices.slice(i,i+3),j=>({p:new THREE.Vector3(p.getX(j),p.getY(j)-y,p.getZ(j)),n:new THREE.Vector3(n.getX(j),n.getY(j),n.getZ(j))})),clipped=[];
+        for(let j=0;j<3;j++){
+          const a=triangle[j],b=triangle[(j+1)%3],insideA=a.p.z<=-cutoff,insideB=b.p.z<=-cutoff;
+          if(insideA)clipped.push(a);
+          if(insideA!==insideB){const t=(-cutoff-a.p.z)/(b.p.z-a.p.z);clipped.push({p:a.p.clone().lerp(b.p,t),n:a.n.clone().lerp(b.n,t).normalize()});}
+        }
+        for(let j=1;j<clipped.length-1;j++)for(const vertex of [clipped[0],clipped[j],clipped[j+1]]){positions.push(...vertex.p.toArray());normals.push(...vertex.n.toArray());}
+      }
+      geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));flat.dispose();face.dispose();
+    }
+    const trim=new THREE.Mesh(geometry,this.frontTrimMaterial);trim.position.y=y;trim.name=name;trim.userData.flushSurface=true;
+    this.machine.add(trim);this.meshes++;return trim;
+  }
   box(w,h,d,x,y,z,material=this.black,group=this.machine,r=.025){
     r=Math.max(0,Math.min(r,w/4,h/4,d/4));
     const shape=this.roundedShape(w-r*2,h-r*2,r);
@@ -97,6 +133,19 @@ export class ProjectorScene {
     geo.translate(0,0,-(d-r*2)/2);const m=new THREE.Mesh(geo,material);m.position.set(x,y,z);group.add(m);this.meshes++;return m;
   }
   cylinder(radius,height,x,y,z,mat,group=this.machine){const m=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,height,48),mat);m.position.set(x,y,z);group.add(m);this.meshes++;return m;}
+  dullViewerRim(mesh){
+    // Suppress only the two viewer-side end highlights, preserving their
+    // rounded geometry and the reflective finishes toward the wall.
+    mesh.updateWorldMatrix(true,false);const geometry=mesh.geometry,p=geometry.attributes.position;
+    const indices=geometry.index?.array??Array.from({length:p.count},(_,i)=>i),normal=[],matte=[];
+    for(let i=0;i<indices.length;i+=3){
+      const center=new THREE.Vector3();for(let j=0;j<3;j++)center.add(new THREE.Vector3().fromBufferAttribute(p,indices[i+j]));center.multiplyScalar(1/3).applyMatrix4(mesh.matrixWorld);
+      (center.z>1.40&&center.y>.92?matte:normal).push(indices[i],indices[i+1],indices[i+2]);
+    }
+    const source=mesh.material,finish=new THREE.MeshPhysicalMaterial({color:source.color.clone(),roughness:1,metalness:0,specularIntensity:0,bumpMap:source.bumpMap,bumpScale:source.bumpScale});
+    finish.userData.diffuseOnly=true;if(this.topMaterials.includes(source))this.topMaterials.push(finish);
+    geometry.setIndex([...normal,...matte]);geometry.clearGroups();geometry.addGroup(0,normal.length,0);geometry.addGroup(normal.length,matte.length,1);mesh.material=[source,finish];
+  }
   buildBody(){
     // Leave a real, narrow opening through the right shell at the film gate.
     this.box(2.00,.41,2.95,-.08,.25,0,this.black,undefined,.08).name='chassis-base';
@@ -122,8 +171,9 @@ export class ProjectorScene {
     const outerRounded=this.roundContour(outer,.07);
     const outerGeo=new THREE.ExtrudeGeometry(outerRounded,{depth:.035,bevelEnabled:false,steps:1,curveSegments:16});outerGeo.rotateX(-Math.PI/2);
     const outerShell=new THREE.Mesh(outerGeo,this.topSilver);outerShell.position.y=.918;outerShell.name='top-l-shaped-shell';this.machine.add(outerShell);this.meshes++;
-    this.rolledEdge(outerRounded,.953,.042,.095,'chassis-rounded-edge');
-    this.box(.27,.012,.15,.27,.962,-1.40,this.dark,undefined,.002).name='front-top-recess';
+    const chassisEdge=this.rolledEdge(outerRounded,.953,.042,.095,'chassis-rounded-edge');
+    this.box(.27,.012,.15,.27,.962,-1.40,this.black,undefined,.002).name='front-top-recess';
+    this.frontTrim(outerRounded,.953,'chassis-front-reflective-trim',16,chassisEdge);
     const chamberStart=this.machine.children.length;
     this.box(1.81,.010,1.97,.18,.892,.486,this.dark,undefined,.002);
     // back-line(1).jpg: an open rear recess receives the remote. Its top face
@@ -141,6 +191,7 @@ export class ProjectorScene {
     const hgeo=new THREE.ExtrudeGeometry(hatchRounded,{depth:.023,bevelEnabled:true,bevelSize:.005,bevelThickness:.004,bevelSegments:3,curveSegments:12});
     hgeo.rotateX(-Math.PI/2);const cover=new THREE.Mesh(hgeo,this.topSilver);cover.position.set(.18,.902,.486);cover.name='vented-lamp-cover';this.machine.add(cover);this.meshes++;
     const chamberEdge=this.rolledEdge(hatchRounded,.929,.018,.15,'lamp-chamber-rounded-edge');chamberEdge.position.set(.18,0,.486);
+    const chamberTrim=this.frontTrim(hatchRounded,.929,'lamp-chamber-front-reflective-trim',12,chamberEdge);chamberTrim.position.set(.18,.929,.486);
     this.vents=new THREE.Group();this.vents.name='five-recessed-vent-emitters';this.machine.add(this.vents);
     // light.png: five triangular hot regions and irregular oval reflections.
     // Softness is inside the cavity texture; the silver lips occlude its edges.
@@ -184,15 +235,15 @@ export class ProjectorScene {
     this.focusPanelMaterial=new THREE.MeshStandardMaterial({color:0x111313,roughness:.86,metalness:.04,bumpMap:grooveMap,bumpScale:.001});
     this.box(.582,.018,.466,.625,.938,.600,this.focusPanelMaterial,undefined,.002).name='focus-black-pad';
     this.box(.052,.004,.003,.625,.950,.418,this.gray,undefined,.0007).rotation.y=-.5;
-    this.box(1.23,.052,.202,.485,.901,GATE_Z,this.dark,undefined,.004).name='fixed-transport-throat';
+    this.box(1.23,.052,.202,.485,.901,GATE_Z,this.transportPlastic,undefined,.004).name='fixed-transport-throat';
     this.transportLeakMaterial=new THREE.MeshBasicMaterial({color:0xffe2aa,transparent:true,opacity:0,toneMapped:false});
     this.box(.64,.014,.065,.625,.913,-.086,this.transportLeakMaterial,undefined,.002).name='transport-underarm-light-slit';
     this.carriage=new THREE.Group();this.carriage.name='sliding-pull-push-arm';this.machine.add(this.carriage);
     // Red annotation: fixed throat. Cyan annotation: moving rail, completely
     // occluded to the left of the machine's side wall even when viewed above.
     this.armClip=new THREE.Plane(new THREE.Vector3(1,0,0),-1.105);
-    const armMat=this.dark.clone();armMat.clippingPlanes=[this.armClip];
-    const ribMat=this.black.clone();ribMat.clippingPlanes=[this.armClip];
+    const armMat=this.transportPlastic.clone();armMat.clippingPlanes=[this.armClip];
+    const ribMat=this.transportPlastic.clone();ribMat.clippingPlanes=[this.armClip];
     this.box(2.00,.100,.130,.58,.885,GATE_Z,armMat,this.carriage,.007).name='single-internal-slide-rod';
     for(let i=0;i<4;i++)for(const sign of [-1,1]){const rib=this.box(.485,.011,.008,-.14+i*.48,.885,GATE_Z+.067,ribMat,this.carriage,.002);rib.rotation.z=sign*Math.atan2(.073,.48);}
     const grip=this.box(.35,.100,.205,1.55,.929,GATE_Z,this.black,this.carriage,.020);grip.name='ribbed-end-grip';
@@ -205,6 +256,7 @@ export class ProjectorScene {
     const labelTex=new THREE.CanvasTexture(label);labelTex.colorSpace=THREE.SRGBColorSpace;const decal=new THREE.Mesh(new THREE.PlaneGeometry(.155,.097),new THREE.MeshBasicMaterial({map:labelTex,transparent:true,depthWrite:false,opacity:.72}));decal.position.set(1.38,.578,GATE_Z+.041);this.carriage.add(decal);
     // Raise the whole chamber, keeping its remote and optical details flush.
     const chamberParts=this.machine.children.slice(chamberStart);this.lampChamber=new THREE.Group();this.lampChamber.name='raised-lamp-chamber';this.machine.add(this.lampChamber);for(const part of chamberParts)this.lampChamber.add(part);this.lampChamber.position.y=.12;
+    for(const part of [rearMesh,cover,chamberEdge])this.dullViewerRim(part);
     // Front lens points away from the viewer; only its upper rim is visible.
     const lens=this.cylinder(.30,.34,.58,.64,-1.63,this.black);lens.rotation.x=Math.PI/2;
     for(let i=0;i<4;i++){const ring=this.cylinder(.31,.012,.58,.64,-1.48-i*.065,this.dark);ring.rotation.x=Math.PI/2;}
@@ -317,7 +369,7 @@ export class ProjectorScene {
   }
   setTopReflectance(value){
     this.topReflectance=Math.max(0,Math.min(1,Number(value)||0));
-    for(const mat of this.topMaterials){mat.color.copy(this.topBaseColor).multiplyScalar(this.topReflectance);mat.specularIntensity=this.topReflectance;}
+    for(const mat of this.topMaterials){mat.color.copy(this.topBaseColor).multiplyScalar(this.topReflectance);mat.specularIntensity=mat.userData.diffuseOnly?0:this.topReflectance;}
     this.canvas.dataset.topReflectance=String(this.topReflectance);
     if(this.ambient)this.draw();
   }
