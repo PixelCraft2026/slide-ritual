@@ -12,7 +12,7 @@ const files = [
   'scene.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js', 'native-projection.js', 'gain-map.js', 'i18n.js',
   'darkroom.html', 'vendor/three.module.js', 'vendor/LICENSE-three',
   'assets/favicon.svg', 'assets/alpine.jpg', 'assets/woodland.jpg', 'assets/evening.jpg',
-  'assets/advance.wav', 'assets/fan.wav',
+  'assets/advance.mp3', 'assets/fan.mp3',
 ];
 
 for (const file of files) {

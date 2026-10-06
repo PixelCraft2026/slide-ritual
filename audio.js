@@ -4,6 +4,11 @@ const audioSettled=(work,timeout)=>new Promise(resolve=>{
 });
 export class ProjectorAudio {
   constructor(){this.volume=.55;this.fanVolume=.18;this.enabled=true;this.buffers={};this.files={};this.active=new Set();this.fanWanted=false;this.background=false;this.needsRecovery=false;this.lifecycle=0;this.resumeTimeout=600;this.probeDelay=80;}
+  async loadFile(name){
+    this.files[name]??=(async()=>{const response=await fetch(`assets/${name}.mp3`);if(!response.ok)throw new Error('Audio file missing');return response.arrayBuffer();})();
+    try{return await this.files[name];}catch(error){delete this.files[name];throw error;}
+  }
+  preload(){return Promise.all(['advance','fan'].map(name=>this.loadFile(name).catch(()=>null)));}
   createContext(){
     const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)return null;
     this.dropContext();
@@ -11,19 +16,19 @@ export class ProjectorAudio {
       const ctx=this.context=new AudioCtx();this.lifecycle++;this.needsRecovery=false;
       this.master=ctx.createGain();this.master.gain.value=this.enabled?this.volume:0;this.master.connect(ctx.destination);
       this.fanMaster=ctx.createGain();this.fanMaster.gain.value=this.enabled?1:0;this.fanMaster.connect(ctx.destination);
+      this.fanLoading=!this.buffers.fan;
       this.loading=Promise.all(['advance','fan'].map(async name=>{
-        if(this.buffers[name])return;
         try{
-          this.files[name]??=(async()=>{const response=await fetch(`assets/${name}.wav`);if(!response.ok)throw new Error('Audio file missing');return response.arrayBuffer();})();
-          this.buffers[name]=await ctx.decodeAudioData((await this.files[name]).slice(0));
-        }catch(error){delete this.files[name];console.info('Reference audio fallback:',error.message);}
+          if(!this.buffers[name])this.buffers[name]=await ctx.decodeAudioData((await this.loadFile(name)).slice(0));
+        }catch(error){console.info('Reference audio fallback:',error.message);}
+        finally{if(name==='fan'&&this.context===ctx){this.fanLoading=false;if(this.fanWanted)this.startFan();}}
       }));return ctx;
     }catch{this.needsRecovery=true;return null;}
   }
   async unlock({rebuild=false}={}){
     if((rebuild||!this.context)&&!this.createContext())return false;
     // resume is invoked synchronously in the gesture, before loading awaits.
-    const ready=await this.resume({gesture:true});await audioSettled(this.loading,4000);
+    const ready=await this.resume({gesture:true});
     if(ready&&this.fanWanted)this.startFan();return ready;
   }
   dropContext(){
@@ -37,7 +42,7 @@ export class ProjectorAudio {
   setFanVolume(volume){this.fanVolume=Math.max(0,Math.min(1,volume));if(this.fan){this.fanGain.gain.cancelScheduledValues(this.context.currentTime);this.fanGain.gain.setTargetAtTime(this.fanVolume*.55,this.context.currentTime,.12);}}
   setEnabled(enabled){this.enabled=enabled;this.setVolume(this.volume);if(this.fanMaster)this.fadeGain(this.fanMaster.gain,enabled?1:0);if(!enabled)this.stopFanNode(true);}
   startFan(){
-    this.fanWanted=true;if(!this.context||this.fan||!this.enabled||this.background||this.context.state!=='running')return;
+    this.fanWanted=true;if(!this.context||this.fan||this.fanLoading||!this.enabled||this.background||this.context.state!=='running')return;
     const ctx=this.context;this.fanGain=ctx.createGain();this.fanGain.gain.setValueAtTime(0,ctx.currentTime);this.fanGain.gain.linearRampToValueAtTime(this.fanVolume*.55,ctx.currentTime+1.5);this.fanGain.connect(this.fanMaster);
     this.fan=ctx.createBufferSource();this.fan.buffer=this.buffers.fan||this.noiseFallback();this.fan.loop=true;
     this.fan.connect(this.fanGain);this.fan.start();
@@ -67,7 +72,8 @@ export class ProjectorAudio {
     const src=this.context.createBufferSource();src.buffer=this.buffers.advance;src.playbackRate.value=src.buffer.duration/duration;
     const lowpass=this.context.createBiquadFilter();lowpass.type='lowpass';lowpass.frequency.value=2200;lowpass.Q.value=.55;
     const shelf=this.context.createBiquadFilter();shelf.type='highshelf';shelf.frequency.value=1300;shelf.gain.value=-5;
-    const gain=this.context.createGain();gain.gain.value=.84;src.connect(lowpass);lowpass.connect(shelf);shelf.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
+    // Calibrated against the previous recording through this filter chain.
+    const gain=this.context.createGain();gain.gain.value=2.37;src.connect(lowpass);lowpass.connect(shelf);shelf.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
     src.onended=()=>{this.active.delete(src);src.disconnect();lowpass.disconnect();shelf.disconnect();gain.disconnect();};
   }
   stopAdvance(){for(const src of this.active){try{src.stop();}catch{}}this.active.clear();}

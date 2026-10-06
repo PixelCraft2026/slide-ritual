@@ -29,7 +29,7 @@ const demos=[
 ];
 const state={slides:demos.slice(),index:0,on:false,auto:false,busy:false,importing:false,demo:true,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:false,ready:false,aperture:false};
 const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/></svg>';
-const cache=new Map(),hdrQuery=matchMedia('(dynamic-range: high)'),reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
+const cache=new Map(),slideLoads=new WeakMap(),hdrQuery=matchMedia('(dynamic-range: high)'),reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let renderer=new ProjectionRenderer($('projection'),message=>toast(message)),autoTimer,toastTimer,hideTimer,transitionFrame,finishTransition;
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
 const machineLight=new MachineLight($('machineGlow'));
@@ -133,6 +133,8 @@ function preparationViewport(slide){
 async function loadSlide(slide){
   let result;const viewport=renderer.mode==='native'?undefined:preparationViewport(slide);
   if(cache.has(slide)){const loaded=cache.get(slide);if(!loaded.native&&viewport)await renderer.prepare(loaded.source,viewport);return loaded;}
+  if(slideLoads.has(slide))return slideLoads.get(slide);
+  const pending=(async()=>{
   if(slide.file&&/\.(hdr|rgbe)$/i.test(slide.name))result={source:await processRadiancePixels(await slide.file.arrayBuffer(),viewport)};
   else{
     const image=await loadImage(slide.url);
@@ -146,6 +148,8 @@ async function loadSlide(slide){
   // Finish background filtering before the mechanical cycle starts.
   if(!result.native&&renderer.mode!=='native')await renderer.prepare(result.source,viewport);
   cache.set(slide,result);while(cache.size>2)cache.delete(cache.keys().next().value);return result;
+  })();slideLoads.set(slide,pending);
+  try{return await pending;}finally{if(slideLoads.get(slide)===pending)slideLoads.delete(slide);}
 }
 function spillColor(source){
   let sum=[0,0,0],count=0;
@@ -251,21 +255,26 @@ async function power(){
   if(state.busy||!state.slides.length)return;
   state.busy=true;const epoch=++state.epoch;updateUI();
   try{
-    const unlock=audio.unlock(),loaded=await loadSlide(state.slides[state.index]);await unlock;if(epoch!==state.epoch)return;
-    const prepared=await preparePresentation(state.slides[state.index],loaded);
-    if(epoch!==state.epoch)return;
+    // Unlock in this tap, but downloads/decoding must not delay the lamp.
+    audio.unlock().catch(()=>{});
     audio.click();audio.startFan();$('opticalGate').style.opacity='0';
     state.on=true;state.aperture=true;state.native=false;state.nativeHDR=false;
     native.hidden=true;nativeProjection.deactivate();renderer.canvas.hidden=false;mountProjection(true);renderer.upload(emptyGateSource);
     updateUI();displayStatus();fitScreen();wall.setSource(emptyGateSource);
     $('screenGlow').style.opacity='0';room.dataset.phase='warmup';
-    room.style.setProperty('--lamp','.25');light(.07);await delay(reduceMotion.matches?150:550);if(epoch!==state.epoch)return;
+    room.style.setProperty('--lamp','.25');light(.07);
+    // Prepare the first photo during warmup and the white-field hold. Capture
+    // rejection now so an early failure cannot go unhandled while waiting.
+    const photoReady=(async()=>{const slide=state.slides[state.index],loaded=await loadSlide(slide);if(epoch!==state.epoch)return null;const prepared=await preparePresentation(slide,loaded,epoch);return prepared?{slide,loaded,prepared}:null;})().then(value=>({value}),error=>({error}));
+    await delay(reduceMotion.matches?150:550);if(epoch!==state.epoch)return;
     room.style.setProperty('--lamp','1');
     $('lampAperture').style.opacity='1';room.dataset.phase='aperture';light(1);
     // The same linear white and SDR/HDR rendering as a white photograph.
     // The five-second viewing interval also applies with reduced motion.
-    await delay(APERTURE_HOLD_MS);if(epoch!==state.epoch)return;
-    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(state.slides[state.index],loaded,prepared);});
+    const [,photo]=await Promise.all([delay(APERTURE_HOLD_MS),photoReady]);if(epoch!==state.epoch)return;
+    if(photo.error)throw photo.error;if(!photo.value)return;
+    const {slide,loaded,prepared}=photo.value;
+    await animateTransport(epoch,false,true,()=>{state.aperture=false;present(slide,loaded,prepared);});
     if(epoch!==state.epoch)return;
     resetTransition();state.started=true;state.busy=false;updateUI();scheduleAuto();
   }catch(error){if(epoch!==state.epoch)return;state.busy=false;state.on=false;audio.stopFan();room.style.setProperty('--lamp','0');resetTransition();updateUI();toast(error.message);}
@@ -419,7 +428,11 @@ for(const event of ['pointerdown','keydown'])document.addEventListener(event,()=
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();
+audio.preload();
+const machineReady=machineLight.init().catch(()=>{machineLight.renderer.canvas.hidden=true;});
 try{await renderer.init();}catch(error){renderer.mode='native';toast(t('使用浏览器原生显示：{error}',{error:t(error.message)}));}
 await nativeProjection.initExposure(renderer);
-try{await machineLight.init();}catch{machineLight.renderer.canvas.hidden=true;}
+await machineReady;
 state.ready=true;renderer.canvas.dataset.renderer=renderer.mode;displayStatus();updateUI();fitScreen();light(0);showImmersiveControls();
+// The first demo image is preloaded by HTML; decode it ahead of the tap.
+if(state.demo&&state.slides.length)loadSlide(state.slides[0]).catch(()=>{});

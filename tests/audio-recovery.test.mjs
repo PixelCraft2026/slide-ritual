@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ProjectorAudio} from '../audio.js';
 
-function audioHarness(plans=[]){
+function audioHarness(plans=[],loaders={}){
   const previous={window:globalThis.window,document:globalThis.document,fetch:globalThis.fetch},contexts=[];let fetches=0;
   const param=()=>({value:0,cancelScheduledValues(){},setValueAtTime(v){this.value=v;},linearRampToValueAtTime(v){this.value=v;},setTargetAtTime(v){this.value=v;},exponentialRampToValueAtTime(v){this.value=v;}});
   class Context{
@@ -16,7 +16,7 @@ function audioHarness(plans=[]){
     suspend(){this.state='suspended';return this.plan.pendingSuspend?new Promise(()=>{}):Promise.resolve();}
     close(){this.state='closed';this.closed=true;return Promise.resolve();}
   }
-  globalThis.window={AudioContext:Context};globalThis.document={hidden:false};globalThis.fetch=async()=>{fetches++;return{ok:true,arrayBuffer:async()=>new ArrayBuffer(8)};};
+  globalThis.window={AudioContext:Context};globalThis.document={hidden:false};globalThis.fetch=async url=>{fetches++;const name=url.match(/assets\/(\w+)\./)[1];return loaders[name]?loaders[name]():{ok:true,arrayBuffer:async()=>new ArrayBuffer(8)};};
   const audio=new ProjectorAudio();audio.resumeTimeout=20;audio.probeDelay=8;
   return{audio,contexts,get fetches(){return fetches;},close(){audio.dropContext();Object.assign(globalThis,previous);}};
 }
@@ -80,5 +80,27 @@ test('explicitly enabling sound rebuilds even a context whose state and clock fa
     await h.audio.unlock();h.audio.startFan();h.audio.setEnabled(false);h.audio.setEnabled(true);
     const ready=h.audio.unlock({rebuild:true});assert.equal(h.contexts.length,2,'replacement is created in the button gesture');
     assert.equal(await ready,true);assert.equal(h.fetches,2);assert.equal(h.contexts[0].closed,true);assert.ok(h.audio.fan);
+  }finally{h.close();}
+});
+
+test('cold audio download does not block gesture unlocking and fan loads independently',async()=>{
+  let releaseFan,releaseAdvance;
+  const h=audioHarness([],{fan:()=>new Promise(r=>{releaseFan=r;}),advance:()=>new Promise(r=>{releaseAdvance=r;})});
+  try{
+    const prefetch=h.audio.preload();assert.equal(await h.audio.unlock(),true);
+    h.audio.startFan();assert.equal(Boolean(h.audio.fan),false);assert.equal(h.fetches,2);
+    releaseFan({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});
+    await new Promise(r=>setImmediate(r));assert.ok(h.audio.fan);assert.equal(h.audio.buffers.advance,undefined);
+    releaseAdvance({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});await prefetch;await h.audio.loading;
+    assert.equal(h.fetches,2);assert.equal(h.contexts[0].sources.filter(s=>!s.stopped).length,1);
+  }finally{h.close();}
+});
+
+test('a late fan download respects muting and a power-off request',async()=>{
+  let release;const h=audioHarness([],{fan:()=>new Promise(r=>{release=r;})});
+  try{
+    await h.audio.unlock();h.audio.startFan();h.audio.setEnabled(false);h.audio.stopFan();
+    release({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)});await h.audio.loading;
+    assert.equal(Boolean(h.audio.fan),false);assert.equal(h.audio.fanWanted,false);assert.equal(h.audio.enabled,false);
   }finally{h.close();}
 });

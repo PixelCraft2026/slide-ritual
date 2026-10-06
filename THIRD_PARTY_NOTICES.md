@@ -24,10 +24,10 @@ The photographs use the [Unsplash License](https://unsplash.com/license), rather
 
 ## Slide-change recording / 过片录音
 
-`assets/advance.wav` was extracted from a recording supplied during development. It is excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
+`assets/advance.wav` and its playback copy, `assets/advance.mp3`, were extracted from the recording supplied on 7 October 2026. A single mechanical cycle is trimmed and fitted to the slide-change timing. They are excluded from the project's MIT license. Rights remain with the recording's owner; this repository does not specify a separate reuse license for that recording.
 
-`assets/advance.wav` 截取自开发时提供的录音，不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
+`assets/advance.wav` 及其播放副本 `assets/advance.mp3` 截取自 2026 年 10 月 7 日提供的录音，采用单次机械动作并适配过片时长。不属于项目的 MIT 许可范围。权利归录音的权利人所有；仓库未为该录音指定单独的再利用许可。
 
-The fan sound, `assets/fan.wav`, is synthesized by the project's `tools/prepare-fan.py`, rather than taken from this recording.
+The fan source, `assets/fan.wav`, is synthesized by the project's `tools/prepare-fan.py`, rather than taken from this recording. `assets/fan.mp3` is its compressed playback copy. Lossless WAV sources stay in the repository; the web and offline viewers use MP3 playback copies.
 
-风扇声 `assets/fan.wav` 由项目的 `tools/prepare-fan.py` 合成，未使用上述录音。
+风扇声源文件 `assets/fan.wav` 由项目的 `tools/prepare-fan.py` 合成，未使用上述录音；`assets/fan.mp3` 是其压缩播放副本。仓库保留无损 WAV 源文件，在线版与离线版使用 MP3 播放副本。
