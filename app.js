@@ -156,12 +156,13 @@ async function preparePresentation(slide,loaded,epoch=state.epoch){
 function present(slide,loaded,prepared){
   mountProjection(false);
   state.native=Boolean(loaded.native);state.nativeHDR=Boolean(state.native&&loaded.image&&slide.hdrCandidate);renderer.canvas.hidden=state.native;
-  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=slide.name;nativeProjection.activate();}
+  if(state.native){const image=prepared.nativeImage;if(image!==native){native.hidden=true;native.replaceWith(image);native=image;}native.id='nativeImage';native.hidden=false;native.alt=slide.name;nativeProjection.activate(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');}
   else {native.hidden=true;nativeProjection.deactivate();renderer.upload(loaded.source,prepared.viewport);}
   room.style.setProperty('--spill',prepared.spill);applyLayout(prepared.layout,prepared);light(exposure);displayStatus();
 }
 function applyNativeSettings(){
   const hdr=Boolean(state.native&&state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto');
+  nativeProjection.setHDR(hdr);
   for(const id of ['brightness','focus'])$(id).disabled=hdr;
   if(!state.native)return;
   // CSS filters may flatten native HDR. Keep the native HDR path untouched.
@@ -369,5 +370,6 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeo
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
 renderTray();fitScreen();
 try{await renderer.init();}catch(error){renderer.mode='native';toast(`使用浏览器原生显示：${error.message}`);}
+await nativeProjection.initExposure(renderer);
 try{await machineLight.init();}catch{machineLight.renderer.canvas.hidden=true;}
 state.ready=true;renderer.canvas.dataset.renderer=renderer.mode;displayStatus();updateUI();fitScreen();light(0);showImmersiveControls();

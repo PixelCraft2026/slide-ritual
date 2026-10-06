@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NativeProjection, nativeKeyframes, nativeWipe } from '../native-projection.js';
-import { transitionAt, startupAt } from '../transition.js';
+import { NativeProjection, nativeKeyframes, nativeWipe, nativeExposureOpacity } from '../native-projection.js';
+import { transitionAt, startupAt, EXPOSURE_PEAK } from '../transition.js';
 import { transportHarness } from './helpers/transport-harness.mjs';
 
 const shift=transform=>Number(transform.match(/translate3d\(([^%]+)%/)[1])/100;
@@ -29,6 +29,51 @@ test('native timelines animate translation only and retain opening and closing l
 test('reduced motion keeps the native photo stationary while its light gate opens',()=>{
   const frames=nativeKeyframes(false,true);
   for(let i=0;i<frames.gate.length;i++)assert.ok(Math.abs(shift(frames.gate[i].transform)+shift(frames.contents[i].transform))<1e-12);
+  assert.ok(frames.exposure.every(frame=>frame.opacity===0));
+});
+
+test('native HDR exposure peaks during entry and returns continuously to the unchanged original',()=>{
+  for(const [at,duration,start,end]of [[transitionAt,1500,967,1167],[startupAt,1850,1000,1300]]){
+    assert.equal(nativeExposureOpacity(at(0)),0);assert.equal(nativeExposureOpacity(at(duration)),0);
+    for(let ms=start;ms<end;ms++)assert.equal(nativeExposureOpacity(at(ms)),1);
+    let previous=1;
+    for(let ms=end;ms<=duration;ms++){
+      const opacity=nativeExposureOpacity(at(ms));assert.ok(opacity<=previous);previous=opacity;
+      assert.ok(Math.abs(1+opacity*(EXPOSURE_PEAK-1)-at(ms).boost)<1e-12);
+    }
+  }
+});
+
+test('HDR exposure initializes one float pixel on the existing GPU device without decoding or uploading a photo',async()=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'document'),canvas=element();canvas.dataset={};canvas.setAttribute=()=>{};
+  let configuration,shader,draws=0,submissions=0;const context={configure(value){configuration=value;},getConfiguration(){return configuration;},getCurrentTexture(){return{createView(){return{};}};}};
+  canvas.getContext=()=>context;globalThis.document={createElement:()=>canvas};
+  const device={createShaderModule(value){shader=value.code;return{};},async createRenderPipelineAsync(){return{};},createCommandEncoder(){return{beginRenderPass(){return{setPipeline(){},draw(value){assert.equal(value,3);draws++;},end(){}};},finish(){return{};}};},queue:{submit(){submissions++;},async onSubmittedWorkDone(){}}};
+  try{
+    const motion=element();motion.append=value=>{assert.equal(value,canvas);};const projection=new NativeProjection(element(),motion);
+    await projection.initExposure({mode:'webgpu',hdrSupported:true,device});
+    assert.equal(projection.exposure,canvas);assert.equal(canvas.width,1);assert.equal(canvas.height,1);assert.equal(configuration.device,device);
+    assert.equal(configuration.format,'rgba16float');assert.equal(configuration.toneMapping.mode,'extended');assert.equal(canvas.style.mixBlendMode,'multiply');assert.equal(canvas.style.filter,undefined);
+    assert.ok(shader.includes(String(1.055*Math.pow(EXPOSURE_PEAK,1/2.4)-.055)));assert.equal(draws,1);assert.equal(submissions,1);
+    projection.activate(true);projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.equal(draws,1);assert.equal(submissions,1);
+  }finally{if(original)Object.defineProperty(globalThis,'document',original);else delete globalThis.document;}
+});
+
+test('native exposure shares the transport clock and is neutral on reset, SDR selection and deactivation',()=>{
+  const projection=new NativeProjection(element(),element());projection.exposure=element();
+  projection.activate(true);projection.start(performance.now()-1000);
+  assert.equal(projection.animations.length,3);const exposure=projection.animations.at(-1);
+  assert.ok(exposure.currentTime>=1000);assert.ok(exposure.keyframes.some(frame=>frame.opacity===1));assert.equal(exposure.keyframes.at(-1).opacity,0);
+  projection.setHDR(false);assert.equal(projection.exposure.hidden,true);assert.equal(projection.exposure.style.opacity,'0');assert.equal(exposure.cancelled,true);
+  projection.setHDR(true);assert.equal(projection.exposure.hidden,false);projection.reset();assert.equal(projection.animations.length,0);assert.equal(projection.exposure.style.opacity,'0');
+  projection.deactivate();assert.equal(projection.exposure.hidden,true);
+});
+
+test('native exposure uses the same recovery without WAAPI and never substitutes SDR for unavailable HDR compositing',async()=>{
+  const gate=element(),motion=element(),projection=new NativeProjection(gate,motion);gate.animate=undefined;projection.exposure=element();
+  projection.activate(true);projection.start(performance.now());projection.frame(transitionAt(1000));assert.equal(projection.exposure.style.opacity,'1');
+  projection.frame(transitionAt(1500));assert.equal(projection.exposure.style.opacity,'0');
+  const unsupported=new NativeProjection(element(),element());await unsupported.initExposure({mode:'webgl',hdrSupported:false});assert.equal(unsupported.exposure,undefined);
 });
 
 test('preparation keeps the original decoded HDR image and URL without resampling or CSS filtering',async()=>{
