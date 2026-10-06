@@ -718,11 +718,10 @@ class ProjectorAudio {
     // Duration variants are time-stretched offline while preserving pitch.
     // Changing playbackRate here would lower the pitch in the longer opening.
     const src=this.context.createBufferSource();src.buffer=buffer;src.playbackRate.value=1;
-    const lowpass=this.context.createBiquadFilter();lowpass.type='lowpass';lowpass.frequency.value=2200;lowpass.Q.value=.55;
-    const shelf=this.context.createBiquadFilter();shelf.type='highshelf';shelf.frequency.value=1300;shelf.gain.value=-5;
-    // Calibrated against the previous recording through this filter chain.
-    const gain=this.context.createGain();gain.gain.value=opening?1.288:1.245;src.connect(lowpass);lowpass.connect(shelf);shelf.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
-    src.onended=()=>{this.active.delete(src);src.disconnect();lowpass.disconnect();shelf.disconnect();gain.disconnect();};
+    // Preserve the recording's spectrum and transients. Calibrate only the
+    // overall gain so the default loudness remains close to the prior version.
+    const gain=this.context.createGain();gain.gain.value=opening?0.785:0.767;src.connect(gain);gain.connect(this.master);src.start();this.active.add(src);
+    src.onended=()=>{this.active.delete(src);src.disconnect();gain.disconnect();};
   }
   stopAdvance(){for(const src of this.active){try{src.stop();}catch{}}this.active.clear();}
   suspend(){
