@@ -30,7 +30,7 @@ export class MachineLight {
     // The broad skirts remain visible against blackout without isolated white shapes.
     for(const [blur,alpha] of [[2+depth*.7,.22],[7+depth*1.5,.90],[20+depth*3,1],[42+depth*4,.80]]){hc.filter=`blur(${blur*scale}px)`;hc.globalAlpha=alpha;hc.drawImage(seed,0,0);}
     hc.filter='none';hc.globalAlpha=1;
-    const read=ctx=>{try{return ctx.getImageData(0,0,width,height,{pixelFormat:'rgba-float16'}).data;}catch{return ctx.getImageData(0,0,width,height).data;}};
+    const read=ctx=>{try{return ctx.getImageData(0,0,width,height,{pixelFormat:ctx.getContextAttributes?.().colorType==='float16'?'rgba-float16':'rgba-unorm8'}).data;}catch{return ctx.getImageData(0,0,width,height).data;}};
     const pixels=read(hc),precise=pixels.BYTES_PER_ELEMENT===2,unit=precise?1:255,data=new Float32Array(width*height*4);
     // Keep the optical skirt broad while preserving the dark ribs between
     // windows. The geometry already supplies the direct light at their centres.

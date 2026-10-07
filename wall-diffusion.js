@@ -1,3 +1,6 @@
+import {lightContext} from './canvas-compat.js';
+import {blurLightPixels} from './atmosphere.js';
+
 // Image irradiance, integrated in linear light on a small grid. Two broad
 // separable lobes model local diffuse return and the wider room bounce. Only
 // photo/layout preparation uses this work; transport just moves the cache.
@@ -47,4 +50,30 @@ export function wallPixels(field,float=false){
     data[i*4+3]=float?alpha:Math.max(0,alpha*255+noise*Math.min(1,alpha*255));
   }
   return data;
+}
+
+// Android compatibility: the pre-diffusion-update 48px sample and three blurred
+// image lobes. Use its bounded CPU fallback at preparation time, so neither a
+// float Canvas nor a GPU Canvas filter participates in the wall-light cache.
+export function legacyWallSamples(source){
+  const canvas=document.createElement('canvas');canvas.width=canvas.height=48;
+  const ctx=lightContext(canvas),image=ctx.createImageData(48,48),sum=[0,0,0];
+  for(let y=0;y<48;y++)for(let x=0;x<48;x++){
+    const sx=Math.min(source.width-1,Math.floor((x+.5)/48*source.width)),sy=Math.min(source.height-1,Math.floor((y+.5)/48*source.height)),at=(sy*source.width+sx)*4,out=(y*48+x)*4;
+    for(let k=0;k<3;k++){const linear=Math.max(0,source.data[at+k]),v=Math.pow(Math.min(linear,2)/(1+Math.max(0,linear-1)),1/2.2);image.data[out+k]=v*255;sum[k]+=v;}
+    image.data[out+3]=255;
+  }
+  ctx.putImageData(image,0,0);return{source:canvas,color:sum.map(v=>v/2304)};
+}
+export function legacyWallBuffer(source,layout){
+  const scale=Math.min(.5,800/layout.w,600/layout.h),w=Math.ceil(layout.w*scale),h=Math.ceil(layout.h*scale),resolution=Math.min(1,512/Math.max(w*3,h*3));
+  const canvas=document.createElement('canvas');canvas.width=Math.ceil(w*3*resolution);canvas.height=Math.ceil(h*3*resolution);const ctx=lightContext(canvas);
+  const sw=layout.sw*scale*resolution,sh=layout.sh*scale*resolution,cx=w*1.5*resolution,cy=(h+layout.centerY*scale)*resolution;
+  for(const [size,blur,opacity]of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
+    const layer=document.createElement('canvas');layer.width=canvas.width;layer.height=canvas.height;const lc=lightContext(layer);
+    lc.drawImage(source,cx-sw*size/2,cy-sh*size/2,sw*size,sh*size);const pixels=lc.getImageData(0,0,layer.width,layer.height);
+    blurLightPixels(pixels.data,layer.width,layer.height,Math.max(4*resolution,blur));lc.putImageData(pixels,0,0);
+    ctx.globalAlpha=opacity;ctx.drawImage(layer,0,0);
+  }
+  ctx.globalAlpha=1;return canvas;
 }

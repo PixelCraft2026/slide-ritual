@@ -21,13 +21,13 @@ async function initRenderer(nav,{transparent=false,photo=false}={}){
   }finally{for(const [key,value]of original){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
 }
 
-test('Android live photo and room glow bypass WebGPU devices and swapchains, including fullscreen resizes',async()=>{
+test('Android restores WebGPU-first photos and room glow with native SDR presentation across fullscreen resizes',async()=>{
   for(const nav of [{userAgent:'Android 16; Xiaomi 15 Chrome/154'},{userAgent:'Android 16; Xiaomi 15 EdgA/154'},{userAgent:'Linux x86_64',userAgentData:{platform:'Android'}}])for(const options of [{photo:true},{transparent:true}]){
     const {renderer,configs,pipelines,textures,shaders,gpuRequests}=await initRenderer(nav,options);
-    assert.equal(renderer.mode,'webgl');assert.equal(renderer.hdrSupported,false);assert.equal(renderer.hdr,false);
-    assert.equal(gpuRequests,0);assert.equal(configs.length,0);assert.equal(pipelines.length,0);
-    assert.ok(shaders.some(s=>s.includes('precision highp sampler2D;')));
-    assert.equal(textures[0].length,9,'photo filtering still uploads typed half pixels');
+    assert.equal(renderer.mode,'webgpu');assert.equal(renderer.hdrSupported,false);assert.equal(renderer.hdr,false);
+    assert.equal(gpuRequests,1);assert.ok(configs.length>=1);assert.equal(pipelines.length,1);
+    for(const config of configs){assert.equal(config.format,'bgra8unorm');assert.equal(config.colorSpace,'srgb');assert.equal(config.toneMapping.mode,'standard');}
+    assert.equal(pipelines[0].fragment.constants.standardOutput,1);assert.equal(textures[0].format,'rgba16float');
   }
 });
 test('Windows and iPad retain floating P3 HDR presentation',async()=>{

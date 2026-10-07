@@ -82,11 +82,8 @@ export class ProjectionRenderer {
   constructor(canvas,onFailure,{transparent=false,photo=false}={}){this.canvas=canvas;this.onFailure=onFailure;this.transparent=transparent;this.photo=photo;this.alpha=transparent||photo;this.mode='none';this.hdr=false;this.hdrSupported=false;this.source=null;this.params={brightness:1,focus:0,texture:.22,highlight:2,motion:0,boost:1,opacity:1};}
   async init({sdrOnly=false}={}){
     this.presentation=canvasPresentation();
-    // Android fullscreen corruption persists with native byte WebGPU surfaces.
-    // Use the established WebGL renderer for live photos and room glow; export
-    // already requests its SDR WebGL path. Keep native fullscreen available.
     const android=androidCanvasWorkaround();
-    if(navigator.gpu&&!sdrOnly&&!android){
+    if(navigator.gpu&&!sdrOnly){
       try{
         const adapter=await navigator.gpu.requestAdapter();
         if(!adapter)throw new Error('No adapter');

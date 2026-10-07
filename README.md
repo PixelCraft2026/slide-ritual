@@ -48,7 +48,9 @@ The export module loads on demand, with no software encoder or large WASM downlo
 
 Wall return is integrated in linear light into a small cached diffuse field, retaining broad photo colors without enlarged photo outlines. Wall, air and machine bloom caches use float16 where supported; SDR export keeps float composition until its final gamma and 8-bit rounding pass. A fixed neutral rounding dither is limited to half a code value. Decorative wall noise is removed and photo texture no longer adds linear-light noise to black pixels. The supported WebGPU path retains floating-point machine bloom; WebGL fallback remains available.
 
-**Lighting → Environment gamma** adjusts the wall, light and projector from 0.50 to 2.00, leaving photos and controls unchanged. The default 1.00 keeps the original display path. Non-default values use float16 environment composition and a floating-point GPU curve, with neutral subpixel dither at final 8-bit rounding to reduce shadow banding. Native HDR photos remain outside all environment processing. SDR export also excludes photos from the gamma curve. Extra environment surfaces are allocated only when gamma is changed.
+Android uses a compatibility path for viewing and export: the previous three-lobe wall diffusion is prepared with a bounded CPU blur, and all lighting Canvas 2D caches use ordinary 8-bit storage. Live photos retain WebGPU-first rendering with standard SDR presentation. Windows and Apple keep the current floating lighting path. This workaround still requires verification on affected Android hardware.
+
+**Lighting → Environment gamma** adjusts the wall, light and projector from 0.50 to 2.00, leaving photos and controls unchanged. The default 1.00 keeps the original display path. On Windows and Apple, non-default values use float16 environment composition and a floating-point GPU curve, with neutral subpixel dither at final 8-bit rounding to reduce shadow banding. Native HDR photos remain outside all environment processing. SDR export also excludes photos from the gamma curve. Extra environment surfaces are allocated only when gamma is changed.
 
 ## Run locally
 

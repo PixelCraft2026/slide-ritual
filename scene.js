@@ -1,8 +1,8 @@
 import * as THREE from './vendor/three.module.js';
 import { mechanismAt, SLIDE_PITCH, GATE_Z, CHANGE_MS } from './transition.js';
 import { snapshotLight } from './atmosphere.js';
-import { lightContext } from './canvas-compat.js';
-import { wallSamples,wallField,wallPixels } from './wall-diffusion.js';
+import { androidCanvasWorkaround,lightContext } from './canvas-compat.js';
+import { wallSamples,wallField,wallPixels,legacyWallSamples,legacyWallBuffer } from './wall-diffusion.js';
 
 // Rear view reconstructed from the P150 photographs, including back.JPG.
 // The projection and its HDR surface stay outside this SDR geometry pass.
@@ -451,8 +451,9 @@ export class ProjectorScene {
 // Broad, spatially varying diffuse return from the actual image. It is rebuilt
 // only on image/viewport changes; the shutter modulates this preblurred light.
 export class WallLight {
-  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
+  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.legacy=androidCanvasWorkaround();this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
   sampleSource(source){
+    if(this.legacy)return legacyWallSamples(source);
     const sample=wallSamples(source);return{source:sample,color:sample.color};
   }
   setSource(source){Object.assign(this,this.sampleSource(source));this.rebuild();}
@@ -463,6 +464,7 @@ export class WallLight {
   }
   resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){const layout={w,h,sw,sh,centerY};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);this.rebuild();}
   makeBuffer(source,layout){
+    if(this.legacy)return legacyWallBuffer(source,layout);
     const field=wallField(source,layout),canvas=document.createElement('canvas');canvas.width=field.width;canvas.height=field.height;
     const ctx=lightContext(canvas),float=ctx.getContextAttributes?.().colorType==='float16'&&typeof Float16Array==='function';
     const data=wallPixels(field,float),pixels=float?new ImageData(data,field.width,field.height,{colorSpace:'srgb',pixelFormat:'rgba-float16'}):ctx.createImageData(field.width,field.height);

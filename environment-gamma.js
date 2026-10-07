@@ -122,7 +122,7 @@ export class LiveEnvironmentGamma {
       const cy=h*(state.on?.37:.38),rx=Math.hypot(w*.5,h*(state.on?.63:.62)),ry=rx*h/w;
       ellipse(x,w,h,w*.5,cy,rx,ry,state.on?[[0,'#080605'],[.66,'#020202'],[1,'#000']]:[[0,'#171310'],[.66,'#080706'],[1,'#020202']]);
       if(androidCanvasWorkaround()){
-        // Curve the unquantized cached light, not the 8-bit presentation canvas.
+        // Curve the source light cache; Android uses its byte compatibility cache.
         wall.drawTo(x,w,h);air.drawTo(x);
       }else{x.drawImage(wall.canvas,0,0,w,h);x.drawImage(air.canvas,0,0,w,h);}
       const f=air.optics,shift=f?(f.shift-f.clipRight*.5)*wall.sw:0,width=wall.sw*Math.max(.15,1-(f?.clipRight||0)),spill=getComputedStyle(this.host.room).getPropertyValue('--spill');

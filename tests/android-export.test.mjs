@@ -57,8 +57,8 @@ test('4K Android export bounds the CPU wall surface and keeps all full-sized sta
     globals({navigator:{userAgent},document:{createElement:canvas},matchMedia:()=>({addEventListener(){}})},()=>{
       const r=new ExportRenderer({ProjectorScene:Scene,WallLight,AirLight,MachineLight:Machine,ProjectionRenderer:Projection},{settings:{depth:4,projectorY:-5,projectorPitch:0,topReflectance:.7,machineLights:1,diffusion:2,airAmount:1.4,brightness:1,focus:0,texture:.22}},3840,2160);
       if(userAgent.includes('Android')){
-        assert.equal(r.ctx.getContextAttributes().colorType,'unorm8');assert.equal(r.air.ctx.getContextAttributes().colorType,'unorm8');assert.equal(r.wall.ctx.getContextAttributes().colorType,'float16');assert.equal(r.wall.ctx.getContextAttributes().willReadFrequently,true);
-        assert.equal(r.environmentCanvas.width,960);assert.equal(r.environmentCanvas.height,540);assert.equal(r.environmentContext.getContextAttributes().willReadFrequently,true);
+        assert.equal(r.ctx.getContextAttributes().colorType,'unorm8');assert.equal(r.air.ctx.getContextAttributes().colorType,'unorm8');assert.equal(r.wall.ctx.getContextAttributes().colorType,'unorm8');assert.equal(r.wall.legacy,true);assert.equal(r.wall.ctx.getContextAttributes().willReadFrequently,true);
+        assert.equal(r.environmentContext.getContextAttributes().colorType,'unorm8');assert.equal(r.background.options.colorType,'unorm8');assert.equal(r.environmentCanvas.width,960);assert.equal(r.environmentCanvas.height,540);assert.equal(r.environmentContext.getContextAttributes().willReadFrequently,true);
       }else{assert.equal(r.ctx.getContextAttributes().colorType,'float16');assert.equal(r.air.ctx.getContextAttributes().colorType,'float16');assert.equal(r.environmentCanvas,undefined);assert.equal(r.background.width,3840);}
     });
   }

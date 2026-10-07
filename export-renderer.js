@@ -30,10 +30,10 @@ export class ExportRenderer{
     Object.assign(this.photo.params,{brightness:snapshot.settings.brightness,focus:snapshot.settings.focus*this.scale,texture:snapshot.settings.texture,motion:0,highlight:1});
     this.makeBackground();this.active=null;
     if(this.standard){
-      // Broad wall light stays high precision on a small CPU surface. Only
-      // typed pixel arrays cross into WebGL; no floating DOM canvas imports.
+      // Android wall/background stay on small CPU byte surfaces, including
+      // export. Upscale the prepared light during final composition.
       this.environmentCanvas=document.createElement('canvas');Object.assign(this.environmentCanvas,{width:this.w,height:this.h});
-      this.environmentContext=this.environmentCanvas.getContext('2d',{colorSpace:'srgb',colorType:'float16',willReadFrequently:true});
+      this.environmentContext=this.environmentCanvas.getContext('2d',{colorSpace:'srgb',colorType:'unorm8',willReadFrequently:true});
     }this.stillMachine=document.createElement('canvas');this.photoBlur=new PhotoMotionBlur();
     if(host.THREE)this.machineBlur=new MachineMotionBlur(this.scene,host.THREE);
     this.hold=new HoldCompositor(width,height,snapshot.settings.environmentGamma??1);
@@ -56,7 +56,7 @@ export class ExportRenderer{
     }
   }
   makeBackground(){
-    const c=this.background=document.createElement('canvas');c.width=this.standard?this.w:this.width;c.height=this.standard?this.h:this.height;const x=c.getContext('2d',this.standard?{colorType:'float16',willReadFrequently:true}:{colorType:'float16'});x.scale(c.width,c.height);
+    const c=this.background=document.createElement('canvas');c.width=this.standard?this.w:this.width;c.height=this.standard?this.h:this.height;const x=c.getContext('2d',this.standard?{colorType:'unorm8',willReadFrequently:true}:{colorType:'float16'});x.scale(c.width,c.height);
     const g=x.createRadialGradient(.5,.37,0,.5,.37,.8);g.addColorStop(0,'#080605');g.addColorStop(.66,'#020202');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,1,1);
   }
   layout(ratio,aperture=false){

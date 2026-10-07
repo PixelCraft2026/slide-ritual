@@ -1,7 +1,7 @@
 // Work around reported corruption in Android's accelerated float16 Canvas 2D
 // presentation/bitmap path. CPU readback and API presence cannot qualify the
 // compositor. Keep visible lighting on its previously working 8-bit path and
-// retain floating precision in CPU-backed caches. Photo/native HDR is separate.
+// use byte caches too. Photo decoding/native HDR is separate.
 export function androidCanvasWorkaround(nav=globalThis.navigator){
   return nav?.userAgentData?.platform==='Android'||/\bAndroid\b/i.test(nav?.userAgent||'');
 }
@@ -10,7 +10,7 @@ export function lightCanvasOptions({presentation=false,software=false,...options
   // Live SDR lights also rasterize on the CPU: even an 8-bit GPU target can
   // trigger a floating shared-image import when drawing the wall/beam cache.
   // Export byte layers retain acceleration; their inputs are already SDR.
-  return presentation?{colorType:'unorm8',...options,...(software?{willReadFrequently:true}:{})}:{colorType:'float16',...options,willReadFrequently:true};
+  return {colorType:'unorm8',...options,...(!presentation||software?{willReadFrequently:true}:{})};
 }
 export function lightContext(canvas,options){return canvas.getContext('2d',lightCanvasOptions(options));}
 

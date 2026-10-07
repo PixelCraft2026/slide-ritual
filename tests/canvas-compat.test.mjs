@@ -16,9 +16,9 @@ test('Android Chrome, Edge and desktop-mode UA-CH select the light workaround; W
   for(const userAgent of ['Windows NT 10.0 Chrome/154','iPad; CPU OS 26_0 AppleWebKit/605.1.15','Macintosh; Intel Mac OS X AppleWebKit/605.1.15'])assert.equal(androidCanvasWorkaround({userAgent}),false);
 });
 
-test('visible Android lights use unorm8 while float caches remain CPU backed',()=>android(()=>{
+test('all Android lighting canvases use byte storage, with CPU caches',()=>android(()=>{
   assert.equal(lightCanvasOptions({presentation:true}).colorType,'unorm8');
-  assert.deepEqual(lightCanvasOptions(),{colorType:'float16',willReadFrequently:true});
+  assert.deepEqual(lightCanvasOptions(),{colorType:'unorm8',willReadFrequently:true});
 }));
 
 test('actual WallLight and AirLight constructors distinguish viewer from detached export',()=>android(()=>{
@@ -26,8 +26,8 @@ test('actual WallLight and AirLight constructors distinguish viewer from detache
   const canvas=()=>({getContext(type,options){this.options=options;return{};}});
   try{
     const viewer=canvas(),exported=canvas();new WallLight(viewer);new WallLight(exported,{presentation:false});
-    assert.equal(viewer.options.colorType,'unorm8');assert.equal(viewer.options.willReadFrequently,true);assert.equal(exported.options.colorType,'float16');assert.equal(exported.options.willReadFrequently,true);
-    const air=canvas();new AirLight(air,{manual:true});assert.equal(air.options.colorType,'float16');assert.equal(air.options.willReadFrequently,true);
+    assert.equal(viewer.options.colorType,'unorm8');assert.equal(viewer.options.willReadFrequently,true);assert.equal(exported.options.colorType,'unorm8');assert.equal(exported.options.willReadFrequently,true);
+    const air=canvas();new AirLight(air,{manual:true});assert.equal(air.options.colorType,'unorm8');assert.equal(air.options.willReadFrequently,true);
     const liveAir=canvas(),live=new AirLight(liveAir);assert.equal(live.maxScale,.5);assert.equal(liveAir.options.colorType,'unorm8');assert.equal(liveAir.options.willReadFrequently,true);
     const exportAir=canvas(),exportedAir=new AirLight(exportAir,{manual:true,presentation:true});assert.equal(exportedAir.maxScale,1.25);assert.equal(exportAir.options.colorType,'unorm8');assert.equal(exportAir.options.willReadFrequently,undefined);
   }finally{globalThis.matchMedia=original;if(originalDocument)globalThis.document=originalDocument;else delete globalThis.document;}
