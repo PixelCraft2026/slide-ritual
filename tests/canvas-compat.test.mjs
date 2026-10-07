@@ -22,13 +22,15 @@ test('visible Android lights use unorm8 while float caches remain CPU backed',()
 }));
 
 test('actual WallLight and AirLight constructors distinguish viewer from detached export',()=>android(()=>{
-  const original=globalThis.matchMedia;globalThis.matchMedia=()=>({addEventListener(){}});
+  const original=globalThis.matchMedia,originalDocument=globalThis.document;globalThis.document={addEventListener(){}};globalThis.matchMedia=()=>({addEventListener(){}});
   const canvas=()=>({getContext(type,options){this.options=options;return{};}});
   try{
     const viewer=canvas(),exported=canvas();new WallLight(viewer);new WallLight(exported,{presentation:false});
-    assert.equal(viewer.options.colorType,'unorm8');assert.equal(exported.options.colorType,'float16');assert.equal(exported.options.willReadFrequently,true);
+    assert.equal(viewer.options.colorType,'unorm8');assert.equal(viewer.options.willReadFrequently,true);assert.equal(exported.options.colorType,'float16');assert.equal(exported.options.willReadFrequently,true);
     const air=canvas();new AirLight(air,{manual:true});assert.equal(air.options.colorType,'float16');assert.equal(air.options.willReadFrequently,true);
-  }finally{globalThis.matchMedia=original;}
+    const liveAir=canvas(),live=new AirLight(liveAir);assert.equal(live.maxScale,.5);assert.equal(liveAir.options.colorType,'unorm8');assert.equal(liveAir.options.willReadFrequently,true);
+    const exportAir=canvas(),exportedAir=new AirLight(exportAir,{manual:true,presentation:true});assert.equal(exportedAir.maxScale,1.25);assert.equal(exportAir.options.colorType,'unorm8');assert.equal(exportAir.options.willReadFrequently,undefined);
+  }finally{globalThis.matchMedia=original;if(originalDocument)globalThis.document=originalDocument;else delete globalThis.document;}
 }));
 
 test('Android cache warming bypasses floating ImageBitmap creation',async()=>{
@@ -39,4 +41,14 @@ test('Android cache warming bypasses floating ImageBitmap creation',async()=>{
   globalThis.document={createElement:()=>({getContext:()=>({drawImage(){},getImageData(){reads++;}})})};
   try{const source={};assert.equal(await snapshotLight(source),source);assert.equal(snapshots,0);assert.equal(reads,1);}
   finally{for(const [key,value]of originals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
+});
+
+test('software light routing is Android-only and leaves desktop context options intact',()=>{
+  const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+  try{
+    for(const userAgent of ['Windows NT 10.0','iPad; CPU OS 26_0','Macintosh; Intel Mac OS X']){
+      Object.defineProperty(globalThis,'navigator',{configurable:true,value:{userAgent}});
+      assert.deepEqual(lightCanvasOptions({presentation:true,software:true}),{colorType:'float16'});
+    }
+  }finally{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator;}
 });

@@ -1,3 +1,5 @@
+import { androidCanvasWorkaround } from './canvas-compat.js';
+
 // Export-only vector gather. The renderer knows the motion, so no flow estimator
 // or extra full-scene shutter renders are needed. Filtering is in linear light.
 const vertex=`#version 300 es
@@ -10,8 +12,27 @@ export const exportPresentation=`uniform float gamma;
   vec3 curve(vec3 c){return pow(max(c,vec3(0)),vec3(1./gamma));}
   vec3 rounding(vec3 c){float n=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715))))-.5;
   return clamp(c+vec3(n/255.*smoothstep(0.,1./255.,max(c.r,max(c.g,c.b)))),0.,1.);}`;
+// Android's floating Canvas-to-WebGL bridge is unreliable on some drivers.
+// CPU caches use explicit typed pixels; ordinary SDR layers keep native GPU
+// copies. Never read an entire 4K output frame back to the CPU for composition.
+export function uploadExportTexture(g,canvas,{floating=false,standard=false}={}){
+  g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);
+  g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+  const ctx=standard&&floating?canvas.getContext('2d'):null;
+  if(ctx?.getContextAttributes?.().colorType==='float16'){
+    let pixels;try{pixels=ctx.getImageData(0,0,canvas.width,canvas.height,{pixelFormat:'rgba-float16'});}catch{pixels=ctx.getImageData(0,0,canvas.width,canvas.height);}
+    const half=typeof Float16Array==='function'&&pixels.data instanceof Float16Array;
+    const data=half?new Uint16Array(pixels.data.buffer,pixels.data.byteOffset,pixels.data.length):pixels.data;
+    g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,false);
+    g.texImage2D(g.TEXTURE_2D,0,half?g.RGBA16F:g.RGBA,canvas.width,canvas.height,0,g.RGBA,half?g.HALF_FLOAT:g.UNSIGNED_BYTE,data);
+    return true; // typed rows are top-to-bottom; the shader flips this sampler
+  }
+  g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,true);
+  const float=floating&&!standard;g.texImage2D(g.TEXTURE_2D,0,float?g.RGBA16F:g.RGBA,g.RGBA,float?g.HALF_FLOAT:g.UNSIGNED_BYTE,canvas);return false;
+}
 export class ExportFilter{
   constructor(fragment,alpha=false){
+    this.standard=androidCanvasWorkaround();if(this.standard)fragment=fragment.replace('precision highp float;','precision highp float;precision highp sampler2D;');
     this.canvas=document.createElement('canvas');const g=this.gl=this.canvas.getContext('webgl2',{alpha,antialias:false,preserveDrawingBuffer:true});
     if(!g)throw new Error('此设备无法绘制完整导出画面');
     const compile=(type,code)=>{const s=g.createShader(type);g.shaderSource(s,code);g.compileShader(s);if(!g.getShaderParameter(s,g.COMPILE_STATUS))throw new Error(g.getShaderInfoLog(s));return s;};
@@ -23,7 +44,8 @@ export class ExportFilter{
   upload(canvas,width,height,float=false){
     const g=this.gl;if(g.isContextLost())throw new Error('导出显卡连接已中断');
     if(this.canvas.width!==width)this.canvas.width=width;if(this.canvas.height!==height)this.canvas.height=height;
-    g.viewport(0,0,width,height);g.useProgram(this.program);g.bindTexture(g.TEXTURE_2D,this.texture);g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,true);g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);g.texImage2D(g.TEXTURE_2D,0,float?g.RGBA16F:g.RGBA,g.RGBA,float?g.HALF_FLOAT:g.UNSIGNED_BYTE,canvas);
+    g.viewport(0,0,width,height);g.useProgram(this.program);g.bindTexture(g.TEXTURE_2D,this.texture);
+    const flipped=uploadExportTexture(g,canvas,{floating:float,standard:this.standard});g.uniform1i(this.location('imageFlipped'),flipped);
   }
   draw(){this.gl.drawArrays(this.gl.TRIANGLES,0,3);return this.canvas;}
   dispose(){const g=this.gl;g.deleteTexture(this.texture);g.deleteProgram(this.program);g.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.width=this.canvas.height=1;}
@@ -45,9 +67,9 @@ export class PhotoMotionBlur extends ExportFilter{
 }
 export class EnvironmentGamma extends ExportFilter{
   constructor(){super(`#version 300 es
-    precision highp float;uniform sampler2D image;in vec2 uv;out vec4 color;
+    precision highp float;uniform sampler2D image;uniform bool imageFlipped;in vec2 uv;out vec4 color;
     ${exportPresentation}
-    void main(){color=vec4(rounding(curve(texture(image,uv).rgb)),1);}`);}
+    void main(){color=vec4(rounding(curve(texture(image,vec2(uv.x,imageFlipped?1.-uv.y:uv.y)).rgb)),1);}`);}
   render(canvas,gamma){this.upload(canvas,canvas.width,canvas.height,true);this.gl.uniform1f(this.location('gamma'),gamma);return this.draw();}
 }
 

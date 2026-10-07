@@ -5,9 +5,12 @@
 export function androidCanvasWorkaround(nav=globalThis.navigator){
   return nav?.userAgentData?.platform==='Android'||/\bAndroid\b/i.test(nav?.userAgent||'');
 }
-export function lightCanvasOptions({presentation=false,...options}={}){
+export function lightCanvasOptions({presentation=false,software=false,...options}={}){
   if(!androidCanvasWorkaround())return {colorType:'float16',...options};
-  return presentation?{colorType:'unorm8',...options}:{colorType:'float16',...options,willReadFrequently:true};
+  // Live SDR lights also rasterize on the CPU: even an 8-bit GPU target can
+  // trigger a floating shared-image import when drawing the wall/beam cache.
+  // Export byte layers retain acceleration; their inputs are already SDR.
+  return presentation?{colorType:'unorm8',...options,...(software?{willReadFrequently:true}:{})}:{colorType:'float16',...options,willReadFrequently:true};
 }
 export function lightContext(canvas,options){return canvas.getContext('2d',lightCanvasOptions(options));}
 

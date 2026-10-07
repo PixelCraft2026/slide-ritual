@@ -1,3 +1,4 @@
+import { androidCanvasWorkaround } from './canvas-compat.js';
 import { timelineAt } from './export-model.js';
 import { PhotoMotionBlur,MachineMotionBlur } from './export-motion.js';
 import { HoldCompositor } from './export-compositor.js';
@@ -11,9 +12,9 @@ function canvasRect(left,top,width,height){
 const white={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 export class ExportRenderer{
   constructor(host,snapshot,width,height,fps=30){
-    this.host=host;this.snapshot=snapshot;this.width=width;this.height=height;this.shutter=500/fps;
+    this.standard=androidCanvasWorkaround();this.host=host;this.snapshot=snapshot;this.width=width;this.height=height;this.shutter=500/fps;
     this.scale=width/(width>height?960:540);this.w=width/this.scale;this.h=height/this.scale;this.cache=new Map();
-    this.canvas=document.createElement('canvas');Object.assign(this.canvas,{width,height});this.ctx=this.canvas.getContext('2d',{colorSpace:'srgb',colorType:'float16'});
+    this.canvas=document.createElement('canvas');Object.assign(this.canvas,{width,height});this.ctx=this.canvas.getContext('2d',{colorSpace:'srgb',colorType:this.standard?'unorm8':'float16'});
     const mobile=this.w<600,mw=mobile?this.w*1.28:Math.min(this.h*1.15,this.w*.92),mh=this.h*(mobile?.55:.63);
     this.machineRect={left:this.w*.5-mw/2,top:this.h*(1+(mobile?.05:.08))-mh-this.h*snapshot.settings.projectorY/100,width:mw,height:mh};
     const {ProjectorScene,WallLight,AirLight,MachineLight,ProjectionRenderer}=host;
@@ -21,13 +22,19 @@ export class ExportRenderer{
     this.scene.renderer.setPixelRatio(this.scale);this.scene.renderer.setSize(mw,mh,false);
     this.scene.setPitch(snapshot.settings.projectorPitch);this.scene.setTopReflectance(snapshot.settings.topReflectance);this.scene.setEmitterAmount(snapshot.settings.machineLights);
     this.wall=new WallLight(document.createElement('canvas'),{presentation:false});this.wall.amount=snapshot.settings.diffusion;
-    this.air=new AirLight(document.createElement('canvas'),{manual:true});this.air.amount=snapshot.settings.airAmount;
+    this.air=new AirLight(document.createElement('canvas'),{manual:true,presentation:this.standard});this.air.amount=snapshot.settings.airAmount;
     // Detach automatic animation; export owns absolute time and sampling.
     this.air.schedule=()=>{};this.air.shouldAnimate=()=>false;
     this.photo=new ProjectionRenderer(document.createElement('canvas'),()=>{});
     this.machine=new MachineLight(document.createElement('canvas'));
     Object.assign(this.photo.params,{brightness:snapshot.settings.brightness,focus:snapshot.settings.focus*this.scale,texture:snapshot.settings.texture,motion:0,highlight:1});
-    this.makeBackground();this.active=null;this.stillMachine=document.createElement('canvas');this.photoBlur=new PhotoMotionBlur();
+    this.makeBackground();this.active=null;
+    if(this.standard){
+      // Broad wall light stays high precision on a small CPU surface. Only
+      // typed pixel arrays cross into WebGL; no floating DOM canvas imports.
+      this.environmentCanvas=document.createElement('canvas');Object.assign(this.environmentCanvas,{width:this.w,height:this.h});
+      this.environmentContext=this.environmentCanvas.getContext('2d',{colorSpace:'srgb',colorType:'float16',willReadFrequently:true});
+    }this.stillMachine=document.createElement('canvas');this.photoBlur=new PhotoMotionBlur();
     if(host.THREE)this.machineBlur=new MachineMotionBlur(this.scene,host.THREE);
     this.hold=new HoldCompositor(width,height,snapshot.settings.environmentGamma??1);
   }
@@ -49,7 +56,7 @@ export class ExportRenderer{
     }
   }
   makeBackground(){
-    const c=this.background=document.createElement('canvas');c.width=this.width;c.height=this.height;const x=c.getContext('2d',{colorType:'float16'});x.scale(this.width,this.height);
+    const c=this.background=document.createElement('canvas');c.width=this.standard?this.w:this.width;c.height=this.standard?this.h:this.height;const x=c.getContext('2d',this.standard?{colorType:'float16',willReadFrequently:true}:{colorType:'float16'});x.scale(c.width,c.height);
     const g=x.createRadialGradient(.5,.37,0,.5,.37,.8);g.addColorStop(0,'#080605');g.addColorStop(.66,'#020202');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,1,1);
   }
   layout(ratio,aperture=false){
@@ -104,7 +111,7 @@ export class ExportRenderer{
     else if(segment.kind==='change'){frame=this.host.transitionAt(segment.local);item=this.cache.get(frame.swap?segment.index:segment.index-1);}
     else item=this.cache.get(segment.index);
     this.activate(item);const {layout}=item,optics=this.host.projectionOptics(frame,layout.aperture,layout.sw),emitted=frame.exposure*s.brightness;
-    this.wall.draw(emitted,optics);this.air.time=time/1000;this.air.exposure=emitted;this.air.color=this.wall.color;this.air.optics=optics;this.air.draw();
+    if(this.standard){this.wall.exposure=emitted;this.wall.optics=optics;}else this.wall.draw(emitted,optics);this.air.time=time/1000;this.air.exposure=emitted;this.air.color=this.wall.color;this.air.optics=optics;this.air.draw();
     const cycle=segment.kind==='opening'||segment.kind==='change';
     const sceneKey=[emitted,frame.adaptation||1,...this.wall.color].join(',');
     if(cycle||this.cycleStart!=null||this.stillSceneKey!==sceneKey){
@@ -124,10 +131,15 @@ export class ExportRenderer{
     const holdKey=[segment.kind,sceneKey,frame.boost].join('|');
     if(!cycle&&this.holdItem===item&&this.holdKey===holdKey)return this.hold.render(this.air.canvas);
     if(cycle){this.holdItem=null;this.holdKey=null;}
-    const x=this.ctx,w=this.w,h=this.h;x.setTransform(1,0,0,1,0,0);x.drawImage(this.background,0,0);x.setTransform(this.scale,0,0,this.scale,0,0);
-    x.drawImage(this.wall.canvas,0,0,w,h);
+    const x=this.ctx,w=this.w,h=this.h;x.setTransform(1,0,0,1,0,0);
+    if(this.standard){
+      const e=this.environmentContext;e.setTransform(1,0,0,1,0,0);e.drawImage(this.background,0,0);this.wall.drawTo(e,w,h);
+      this.hold.layer(this.environmentCanvas,false);x.clearRect(0,0,this.width,this.height);
+    }else{x.drawImage(this.background,0,0);}
+    x.setTransform(this.scale,0,0,this.scale,0,0);
+    if(!this.standard)x.drawImage(this.wall.canvas,0,0,w,h);
     const cacheLayer=layer=>{this.hold.layer(this.canvas,layer);x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,this.width,this.height);x.setTransform(this.scale,0,0,this.scale,0,0);};
-    cacheLayer(false);
+    if(!this.standard)cacheLayer(false);
     x.save();x.globalAlpha=segment.kind==='warmup'?0:Math.min(1,frame.exposure*.3);x.filter=`blur(${16*this.scale}px)`;x.fillStyle=`rgba(${item.spill},.26)`;const glowWidth=layout.sw*Math.max(.15,1-optics.clipRight),glowShift=(optics.shift-optics.clipRight*.5)*layout.sw;x.fillRect(w/2-glowWidth/2+glowShift,layout.centerY-layout.sh/2,glowWidth,layout.sh);x.restore();
     cacheLayer('glow');
     // Fixed octagonal optical field, including actual subframe occlusion.
@@ -164,6 +176,7 @@ export class ExportRenderer{
   }
   dispose(){
     this.photoBlur?.dispose();this.machineBlur?.dispose();this.hold?.dispose();
+    if(this.environmentCanvas){this.environmentCanvas.width=this.environmentCanvas.height=this.background.width=this.background.height=1;}
     for(const object of [this.scene.scene,this.scene.wallShadowScene])object?.traverse(o=>{o.geometry?.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])if(m){for(const v of Object.values(m))if(v?.isTexture)v.dispose();m.dispose();}});
     this.scene.renderer.dispose();this.scene.renderer.forceContextLoss();
     for(const r of [this.photo,this.machine.renderer]){r.gl?.getExtension('WEBGL_lose_context')?.loseContext();r.canvas.width=r.canvas.height=1;}
