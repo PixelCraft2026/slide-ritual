@@ -10,6 +10,12 @@ The project [MIT license](LICENSE) covers original code and documentation. The i
 
 Three.js r160 采用 [MIT 许可](vendor/LICENSE-three)，再次分发时须保留其版权与许可声明。
 
+## Mediabunny
+
+`video-export.js` includes the MP4 writing and WebCodecs integration portions of Mediabunny 1.61.3, copyright Vanilagy, under [MPL-2.0](vendor/LICENSE-mediabunny). Its source is available at <https://github.com/Vanilagy/mediabunny/tree/v1.61.3>. The pinned npm dependency and `tools/build-video-export.mjs` reproduce this bundle. Mediabunny is loaded only when video export is opened; no software video encoder is bundled.
+
+视频导出组件包含 Mediabunny 1.61.3 的 MP4 封装及 WebCodecs 集成，保留 MPL-2.0 许可。导出组件按需加载，不包含大型软件编码器。
+
 ## Example photographs / 示例照片
 
 The demo photographs were supplied by the repository maintainer on 7 October 2026. They are excluded from the project's MIT license. Rights remain with their respective owners; this repository does not specify a separate reuse license for these photographs.

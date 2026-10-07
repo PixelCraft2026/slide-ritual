@@ -98,10 +98,10 @@ test('HDR photo exposure is uploaded before transport, keeps current/staged text
     const motion=element();motion.append=()=>{};const projection=new NativeProjection(element(),motion);
     await projection.initExposure({mode:'webgpu',hdrSupported:true,device,pipeline:{getBindGroupLayout(){return{};}},sampler:{}});
     const source=()=>({data:new Float32Array([4,2,1,1]),width:1,height:1,hdr:true,colorSpace:'srgb'});
-    const current=await projection.prepareExposure(source(),{width:720,height:480});projection.activate(true,current);
-    assert.equal(current.canvas.width,1440);assert.equal(current.renderer.params.boost,2);assert.equal(current.canvas.style.mixBlendMode,undefined);
+    const current=await projection.prepareExposure(source(),{width:720,height:480});projection.setLayout({aperture:720,width:720});projection.activate(true,current);
+    assert.equal(current.renderer.photoSize.width,1440);assert.ok(current.canvas.width>1440,'shutter tails fit outside the source rectangle');assert.equal(current.renderer.params.boost,2);assert.equal(current.canvas.style.mixBlendMode,undefined);
     for(let i=0;i<8;i++){await projection.prepareExposure(source(),{width:720,height:480});assert.ok(projection.exposureLayers.size<=3);assert.ok([...projection.exposureLayers.values()].includes(current));}
-    const before={uploads,submits};projection.start(performance.now());projection.frame(transitionAt(1000));projection.reset();assert.equal(uploads,before.uploads);assert.equal(submits,before.submits+1,'one bounded GPU blur pass, no texture upload');
+    const before={uploads,submits};projection.start(performance.now());projection.frame(transitionAt(1000),{time:1000});projection.reset();assert.equal(uploads,before.uploads);assert.equal(submits,before.submits+1,'one bounded GPU blur pass, no texture upload');
     projection.setExposureEV(.5);assert.ok(Math.abs(lastUniform[0]-Math.sqrt(2))<1e-6);
     projection.clearExposures();assert.equal(projection.exposureLayers.size,0);assert.equal(destroyedTextures,9);assert.equal(destroyedBuffers,9);
   }finally{for(const [key,value]of descriptors){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}

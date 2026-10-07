@@ -1,0 +1,11 @@
+import { build } from 'esbuild';
+import { readFileSync,writeFileSync,copyFileSync,mkdirSync } from 'node:fs';
+import { gzipSync,brotliCompressSync } from 'node:zlib';
+import { resolve } from 'node:path';
+await build({absWorkingDir:process.cwd(),entryPoints:[resolve('export-video.js')],outfile:resolve('video-export.js'),tsconfigRaw:{},bundle:true,minify:true,format:'esm',target:'es2022',legalComments:'eof'});
+const bytes=readFileSync('video-export.js'),gzip=gzipSync(bytes),brotli=brotliCompressSync(bytes);
+if(gzip.length>200_000)throw new Error(`Export gzip budget exceeded: ${gzip.length}`);
+copyFileSync('node_modules/mediabunny/LICENSE','vendor/LICENSE-mediabunny');
+mkdirSync('qa',{recursive:true});
+writeFileSync('qa/video-export-size.json',JSON.stringify({library:'mediabunny@1.61.3',raw:bytes.length,gzip:gzip.length,brotli:brotli.length,budget:200000},null,2));
+console.log(`Video export: ${(bytes.length/1000).toFixed(1)} KB raw, ${(gzip.length/1000).toFixed(1)} KB gzip, ${(brotli.length/1000).toFixed(1)} KB Brotli`);

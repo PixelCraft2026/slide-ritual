@@ -45,8 +45,8 @@ export async function snapshotLight(canvas){
   const warm=document.createElement('canvas');warm.width=warm.height=1;const ctx=warm.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,1,1);ctx.getImageData(0,0,1,1);return image;
 }
 export class AirLight {
-  constructor(canvas){
-    this.canvas=canvas;this.ctx=canvas.getContext('2d');this.exposure=0;this.color=[.45,.42,.35];this.amount=1.4;
+  constructor(canvas,{manual=false}={}){
+    this.canvas=canvas;this.ctx=canvas.getContext('2d',{colorType:'float16'});this.exposure=0;this.color=[.45,.42,.35];this.amount=1.4;
     this.reduced=matchMedia('(prefers-reduced-motion: reduce)');this.time=0;this.last=0;
     let seed=2167;const rand=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
     this.motes=Array.from({length:16},()=>({u:rand(),v:rand(),phase:rand()*Math.PI*2,speed:.004+rand()*.010,size:.45+rand()*1.15,depth:rand()}));
@@ -56,10 +56,10 @@ export class AirLight {
       if(now-this.last>=32){this.time+=Math.min(.08,(now-this.last)/1000);this.last=now;this.draw();}
       this.frame=requestAnimationFrame(this.tick);
     };
-    this.reduced.addEventListener('change',()=>this.schedule());
-    document.addEventListener('visibilitychange',()=>this.schedule());
+    this.manual=manual;this.onVisibility=()=>this.schedule();
+    if(!manual){this.reduced.addEventListener('change',this.onVisibility);document.addEventListener('visibilitychange',this.onVisibility);}
   }
-  shouldAnimate(){return this.exposure>0&&this.amount>0&&!this.reduced.matches&&!document.hidden;}
+  shouldAnimate(){return !this.manual&&!this.exportPaused&&this.exposure>0&&this.amount>0&&!this.reduced.matches&&!document.hidden;}
   schedule(){
     if(this.transport){const now=performance.now();if(now-this.last>=32){this.time+=Math.min(.08,(now-this.last)/1000);this.last=now;}this.draw();return;}
     if(this.shouldAnimate()){if(this.frame==null){this.last=performance.now();this.frame=requestAnimationFrame(this.tick);}}
@@ -67,8 +67,8 @@ export class AirLight {
     this.draw();
   }
   setTransport(active){if(this.transport===active)return;this.transport=active;cancelAnimationFrame(this.frame);this.frame=null;this.last=performance.now();if(!active)this.schedule();}
-  layoutKey(layout,color=this.color){return[layout.w,layout.h,layout.sw,layout.sh,layout.centerY,layout.lens?.x,layout.lens?.y,Math.min(devicePixelRatio,1.25),this.amount,...color].join(',');}
-  setLayout(layout){Object.assign(this,layout);this.scale=Math.min(devicePixelRatio,1.25);const w=Math.ceil(this.w*this.scale),h=Math.ceil(this.h*this.scale);if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;}
+  layoutKey(layout,color=this.color){return[layout.w,layout.h,layout.sw,layout.sh,layout.centerY,layout.lens?.x,layout.lens?.y,Math.min(devicePixelRatio,1.25,this.presentationScale??Infinity),this.amount,...color].join(',');}
+  setLayout(layout){Object.assign(this,layout);this.scale=Math.min(devicePixelRatio,1.25,this.presentationScale??Infinity);const w=Math.ceil(this.w*this.scale),h=Math.ceil(this.h*this.scale);if(this.canvas.width!==w)this.canvas.width=w;if(this.canvas.height!==h)this.canvas.height=h;}
   resize(w,h,sw,sh,lens,centerY=h*(w<600?.34:.31)){
     const layout={w,h,sw,sh,centerY,lens:lens||{x:w*.54,y:h*.64}};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);
     this.rebuild();this.draw();
@@ -89,7 +89,7 @@ export class AirLight {
   }
   makeBeam(layout,color){
     const c=document.createElement('canvas');c.width=Math.ceil(layout.w*.5);c.height=Math.ceil(layout.h*.5);
-    const ctx=c.getContext('2d');ctx.scale(.5,.5);
+    const ctx=c.getContext('2d',{colorType:'float16'});ctx.scale(.5,.5);
     const source=layout.lens,section=y=>this.section.call(layout,y),top=section(0).wallY;
     const rgb=color.map((v,i)=>Math.round(155+Math.min(1,v)*75+(i===0?10:0))).join(',');
     // Overlapping soft cross sections have no hard triangular cone boundary.
@@ -122,7 +122,7 @@ export class AirLight {
     ctx.setTransform(this.scale,0,0,this.scale,0,0);ctx.clearRect(0,0,this.w,this.h);
     const intensity=Math.min(1.5,this.exposure)*this.amount;
     this.canvas.dataset.exposure=intensity.toFixed(3);this.canvas.dataset.moving=String(this.shouldAnimate());
-    if(intensity<=0){this.canvas.dataset.dust='0';return;}
+    if(intensity<=0){this.canvas.dataset.dust='0';this.onDraw?.();return;}
     ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=Math.min(1,this.exposure);
     const f=this.optics,dx=f?(f.shift-f.clipRight*.5)*this.sw:0,widthFactor=f?Math.max(.05,1-f.clipRight):1;
     const top=this.section(0).wallY,source=this.lens;let visible=0;
@@ -144,6 +144,6 @@ export class AirLight {
       gradient.addColorStop(0,`rgba(255,239,203,${alpha})`);gradient.addColorStop(.3,`rgba(233,225,205,${alpha*.5})`);gradient.addColorStop(1,'rgba(233,225,205,0)');
       ctx.fillStyle=gradient;ctx.fillRect(x-radius*2.5,y-radius*2.5,radius*5,radius*5);
     }
-    ctx.restore();this.canvas.dataset.dust=String(visible);
+    ctx.restore();this.canvas.dataset.dust=String(visible);this.onDraw?.();
   }
 }

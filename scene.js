@@ -1,6 +1,7 @@
 import * as THREE from './vendor/three.module.js';
 import { mechanismAt, SLIDE_PITCH, GATE_Z, CHANGE_MS } from './transition.js';
-import { snapshotLight, supportsCanvasBlur, blurLightPixels } from './atmosphere.js';
+import { snapshotLight } from './atmosphere.js';
+import { wallSamples,wallField,wallPixels } from './wall-diffusion.js';
 
 // Rear view reconstructed from the P150 photographs, including back.JPG.
 // The projection and its HDR surface stay outside this SDR geometry pass.
@@ -418,6 +419,22 @@ export class ProjectorScene {
   }
   beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
   endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw();}}
+  setEnvironmentGamma(value){
+    if(!this.environmentGamma&&value===1)return;
+    if(!this.environmentGamma){
+      this.environmentGamma={value:1};const visited=new Set();
+      this.scene.traverse(object=>{for(const material of Array.isArray(object.material)?object.material:[object.material]){
+        if(!material||visited.has(material))continue;visited.add(material);const original=material.onBeforeCompile,cacheKey=material.customProgramCacheKey();
+        material.onBeforeCompile=(shader,renderer)=>{original.call(material,shader,renderer);shader.uniforms.environmentGamma=this.environmentGamma;
+          shader.fragmentShader='uniform float environmentGamma;\n'+shader.fragmentShader.replace('#include <colorspace_fragment>',`#include <colorspace_fragment>
+            if(environmentGamma!=1.){gl_FragColor.rgb=pow(max(gl_FragColor.rgb,vec3(0)),vec3(1./environmentGamma));
+              float n=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715))))-.5;
+              gl_FragColor.rgb+=vec3(n/255.*smoothstep(0.,1./255.,max(gl_FragColor.r,max(gl_FragColor.g,gl_FragColor.b))));}`);};
+        material.customProgramCacheKey=()=>cacheKey+'|environment-gamma-v1';material.needsUpdate=true;
+      }});
+    }
+    this.environmentGamma.value=value;this.draw();
+  }
   draw(){
     if(this.batchDepth){this.drawPending=true;return;}
     if(this.armClip){this.machine.updateWorldMatrix(true,true);this.armClip.set(new THREE.Vector3(1,0,0),-1.105).applyMatrix4(this.machine.matrixWorld);}
@@ -426,19 +443,16 @@ export class ProjectorScene {
       this.renderer.render(this.wallShadowScene,this.camera);
     }
     this.renderer.render(this.scene,this.camera);
+    this.onDraw?.();
   }
 }
 
 // Broad, spatially varying diffuse return from the actual image. It is rebuilt
 // only on image/viewport changes; the shutter modulates this preblurred light.
 export class WallLight {
-  constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d');this.amount=1;this.exposure=0;this.color=[.45,.42,.35];this.canvasBlur=supportsCanvasBlur();}
+  constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d',{colorType:'float16'});this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
   sampleSource(source){
-    const c=document.createElement('canvas');c.width=48;c.height=48;const ctx=c.getContext('2d'),im=ctx.createImageData(48,48);let sum=[0,0,0];
-    for(let y=0;y<48;y++)for(let x=0;x<48;x++){
-      const sx=Math.min(source.width-1,Math.floor((x+.5)/48*source.width)),sy=Math.min(source.height-1,Math.floor((y+.5)/48*source.height)),i=(sy*source.width+sx)*4,o=(y*48+x)*4;
-      for(let k=0;k<3;k++){const linear=Math.max(0,source.data[i+k]);const v=Math.pow(Math.min(linear,2)/(1+Math.max(0,linear-1)),1/2.2);im.data[o+k]=v*255;sum[k]+=v;}im.data[o+3]=255;
-    }ctx.putImageData(im,0,0);return{source:c,color:sum.map(v=>v/2304)};
+    const sample=wallSamples(source);return{source:sample,color:sample.color};
   }
   setSource(source){Object.assign(this,this.sampleSource(source));this.rebuild();}
   layoutKey({w,h,sw,sh,centerY}){return[w,h,sw,sh,centerY].join(',');}
@@ -448,22 +462,11 @@ export class WallLight {
   }
   resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){const layout={w,h,sw,sh,centerY};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);this.rebuild();}
   makeBuffer(source,layout){
-    const scale=Math.min(.5,800/layout.w,600/layout.h),w=Math.ceil(layout.w*scale),h=Math.ceil(layout.h*scale);
-    // Safari may silently ignore Canvas filters. Its fallback light buffer is
-    // bounded to 512 pixels per side and blurred once before transport.
-    const resolution=this.canvasBlur?1:Math.min(1,512/Math.max(w*3,h*3));
-    const c=document.createElement('canvas');c.width=Math.ceil(w*3*resolution);c.height=Math.ceil(h*3*resolution);const ctx=c.getContext('2d');
-    // Padding lets the halo travel with the film without exposing a buffer edge.
-    const sw=layout.sw*scale*resolution,sh=layout.sh*scale*resolution,cx=w*1.5*resolution,cy=(h+layout.centerY*scale)*resolution;
-    for(const [scale,blur,opacity] of [[2.4,sw*.28,.28],[1.45,sw*.10,.22],[1.03,sw*.028,.18]]){
-      const sigma=Math.max(4*resolution,blur);ctx.globalAlpha=opacity;
-      if(this.canvasBlur){ctx.filter=`blur(${sigma}px)`;ctx.drawImage(source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);}
-      else{
-        const layer=document.createElement('canvas');layer.width=c.width;layer.height=c.height;const lc=layer.getContext('2d',{willReadFrequently:true});
-        lc.drawImage(source,cx-sw*scale/2,cy-sh*scale/2,sw*scale,sh*scale);const pixels=lc.getImageData(0,0,layer.width,layer.height);
-        blurLightPixels(pixels.data,layer.width,layer.height,sigma);lc.putImageData(pixels,0,0);ctx.drawImage(layer,0,0);
-      }
-    }if(this.canvasBlur)ctx.filter='none';ctx.globalAlpha=1;return c;
+    const field=wallField(source,layout),canvas=document.createElement('canvas');canvas.width=field.width;canvas.height=field.height;
+    const ctx=canvas.getContext('2d',{colorType:'float16'}),float=ctx.getContextAttributes?.().colorType==='float16'&&typeof Float16Array==='function';
+    const data=wallPixels(field,float),pixels=float?new ImageData(data,field.width,field.height,{colorSpace:'srgb',pixelFormat:'rgba-float16'}):ctx.createImageData(field.width,field.height);
+    if(!float)pixels.data.set(data);
+    ctx.putImageData(pixels,0,0);return canvas;
   }
   async prepare(source,layout){
     this.preparations??=new Map();const key=this.layoutKey(layout),cached=this.preparations.get(source);
@@ -484,13 +487,18 @@ export class WallLight {
     this.exposure=exposure;if(this.batchDepth){this.pendingOptics=optics;this.drawPending=true;return;}
     const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
     if(this.buffer){
-      ctx.save();ctx.globalAlpha=Math.min(1,exposure*this.amount*.82);
+      ctx.save();let gain=Math.max(0,exposure)*Math.max(0,Math.min(6,this.amount))*.82;
       if(optics&&(optics.phase==='out'||optics.phase==='in')){
         // The diffuse return follows the moving, partially exposed film window.
         const dx=(optics.shift-optics.clipRight*.5)*this.sw*this.scale;
         ctx.translate(w*.5+dx,0);ctx.scale(.55+.45*(1-optics.clipRight),1);ctx.translate(-w*.5,0);
       }
-      ctx.drawImage(this.buffer,-w,-h,w*3,h*3);ctx.restore();
+      // Add cached radiance instead of saturating the globalAlpha control at
+      // 1. 200% now produces twice the old 100% return. No new blur or cache.
+      ctx.globalCompositeOperation='lighter';
+      while(gain>0){ctx.globalAlpha=Math.min(1,gain);ctx.drawImage(this.buffer,-w,-h,w*3,h*3);gain-=1;}
+      ctx.restore();
     }
+    this.onDraw?.();
   }
 }

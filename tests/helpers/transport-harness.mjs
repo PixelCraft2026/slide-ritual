@@ -5,6 +5,7 @@ import { AirLight } from '../../atmosphere.js';
 import { NativeProjection } from '../../native-projection.js';
 import * as timing from '../../transition.js';
 import { translate } from '../../i18n.js';
+import { photoMotion } from '../../photo-motion.js';
 
 // Execute the app's actual preparation/swap/RAF functions. Browser surfaces are
 // spies: this qualifies work placement and render counts, not GPU time or FPS.
@@ -55,6 +56,8 @@ export async function transportHarness(options={}){
   const nativeProjection=new NativeProjection(element('opticalGate'),element('filmMotion'),element('texture'));
   if(options.nativePhotos)nativeProjection.exposure=element('native-exposure');
   env={$:element,t:(key,params)=>translate(key,'zh-CN',params),room,screen,native:element('native'),nativeProjection,renderer:photo,scene,wall,air,machineLight,decodeImage:options.decodeImage||decodeImage,state:{slides,index:0,on:true,auto:false,busy:false,importing:false,demo:false,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:true,ready:true,aperture:false},cache:new Map(),hdrQuery:{matches:Boolean(options.nativePhotos)},reduceMotion:{matches:false},exposure:1,transporting:false,layoutPending:false,projectionWidth:528,autoTimer:null,transitionFrame:null,finishTransition:null,toastTimer:null,hideTimer:null,powerIcon:'',audio:{advance(){},stopAdvance(){},stopFan(){}},mountProjection(){},showImmersiveControls(){},delay:async()=>{},setTimeout:()=>0,clearTimeout(){},...timing};
+  env.photoMotion=photoMotion;
+  env.environmentGamma=null;
   const functions=text.slice(text.indexOf('function toast('),text.indexOf('async function importFiles('));
   env.slideLoads=new WeakMap();
   env.nextDownload=null;env.upcoming=null;

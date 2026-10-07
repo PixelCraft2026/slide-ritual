@@ -6,7 +6,12 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "build:pages": "node tools/build-pages.mjs"
+    "build:export": "node tools/build-video-export.mjs",
+    "build": "node tools/build-video-export.mjs && node tools/build-standalone.mjs && node tools/build-pages.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "mediabunny": "1.61.3"
+  }
 }

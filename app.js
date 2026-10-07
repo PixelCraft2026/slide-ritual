@@ -1,13 +1,16 @@
 import { hasHDRMetadata, linearToSrgb } from './hdr.js';
 import { ProjectionRenderer, decodeImage } from './renderer.js';
-import { processRadiancePixels } from './pixels.js';
+import { processRadiancePixels, processImagePixels } from './pixels.js';
 import { resampleArea } from './resample.js';
 import { ProjectorAudio } from './audio.js';
 import { ProjectorScene, WallLight } from './scene.js';
+import * as THREE from './vendor/three.module.js';
 import { AirLight } from './atmosphere.js';
 import { MachineLight } from './machine-light.js';
 import { NativeProjection } from './native-projection.js';
 import { decodeGainMapTransition } from './gain-map.js';
+import { photoMotion } from './photo-motion.js';
+import { LiveEnvironmentGamma } from './environment-gamma.js';
 import { createI18n } from './i18n.js';
 import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, motionRadius, projectionOptics, transitionAt, startupAt, projectionLayout } from './transition.js';
 
@@ -30,12 +33,13 @@ const demos=[
 const state={slides:demos.slice(),index:0,on:false,auto:false,busy:false,importing:false,demo:true,immersive:false,epoch:0,native:false,nativeHDR:false,displayMode:'auto',started:false,ready:false,aperture:false};
 const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/></svg>';
 const cache=new Map(),slideLoads=new WeakMap(),hdrQuery=matchMedia('(dynamic-range: high)'),reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
-let renderer=new ProjectionRenderer($('projection'),message=>toast(message)),autoTimer,toastTimer,hideTimer,transitionFrame,finishTransition;
+let renderer=new ProjectionRenderer($('projection'),message=>toast(message),{photo:true}),autoTimer,toastTimer,hideTimer,transitionFrame,finishTransition;
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
 const machineLight=new MachineLight($('machineGlow'));
+let environmentGamma;
 let exposure=0;
 let transporting=false,layoutPending=false,projectionWidth=0;
-let nextDownload=null,upcoming=null;
+let nextDownload=null,upcoming=null,autoDeadline=0;
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const emptyGateSource={width:1,height:1,data:new Float32Array([1,1,1,1]),colorSpace:'srgb',hdr:false};
 function mountProjection(aperture){(aperture?document.querySelector('.empty-gate'):$('filmMotion')).prepend(renderer.canvas);}
@@ -64,6 +68,7 @@ function updateMeta(){
   const n=String(state.index+1).padStart(2,'0');$('currentCount').textContent=state.slides.length?n:'00';$('totalCount').textContent=String(state.slides.length).padStart(2,'0');
 }
 function updateUI(){
+  if($('exportBtn'))$('exportBtn').disabled=!state.ready||state.busy||state.importing||!state.slides.length||Boolean(state.exporting);
   room.classList.toggle('lit',state.on);room.classList.toggle('off',!state.on);
   $('machineState').textContent=t(state.importing?'装片中':state.busy?(state.started?'过片中':'灯泡预热'):state.on?(state.auto?'自动放映':'正在放映'):'待机');
   $('powerBtn').setAttribute('aria-pressed',String(state.on));$('powerBtn').setAttribute('aria-label',t(state.on?'关闭幻灯机':'开启幻灯机'));
@@ -118,9 +123,10 @@ function applyLayout(layout,prepared){
   room.style.setProperty('--screen-width',`${width}px`);room.style.setProperty('--screen-height',`${height}px`);
   room.style.setProperty('--aperture-size',`${aperture}px`);
   room.style.setProperty('--projection-center',`${centerY}px`);
-  if(!renderer.canvas.hidden)renderer.resize(sw,sh);
+  if(!renderer.canvas.hidden)renderer.resize(sw,sh,state.aperture?0:nativeProjection.travel);
   if(prepared){wall.activate(prepared.wall);air.activate(prepared.air);}
   else{wall.resize(w,h,sw,sh,centerY);air.resize(w,h,sw,sh,lens,centerY);machineLight.resize(w,h,scene,Number($('depth').value));}
+  environmentGamma?.resize();
 }
 function fitScreen(){
   if(transporting){layoutPending=true;return;}
@@ -201,20 +207,20 @@ function applyNativeSettings(){
   if(native.style.getPropertyValue('dynamic-range-limit')!==range)native.style.setProperty('dynamic-range-limit',range);
 }
 function light(value,optics){exposure=value;const emitted=value*renderer.params.brightness,gain=optics?.adaptation??1;room.style.setProperty('--exposure',String(emitted));room.dataset.exposureGain=String(gain);wall.draw(emitted,optics);air.illuminate(emitted,wall.color,optics);scene?.illuminate(state.on?1:0,emitted,wall.color,gain*renderer.params.brightness);machineLight.renderer.params.highlight=renderer.params.highlight;machineLight.illuminate(state.on?1:0,gain,renderer.params.brightness);}
-function setOptics(frame){
+function setOptics(frame,context){
   const gate=$('opticalGate'),motion=$('filmMotion');
   gate.style.opacity=String(frame.open>0?1:0);
   // Film moves through a fixed octagonal optical field. The field's boundary
   // stays in wall coordinates, so portrait and landscape intersections differ.
-  nativeProjection.frame(frame);
-  renderer.params.motion=motionRadius(frame,nativeProjection.travel)*Math.min(devicePixelRatio||1,2);renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
+  nativeProjection.frame(frame,context);
+  renderer.params.motionProfile=reduceMotion.matches||state.native?null:photoMotion(frame,{...context,travel:nativeProjection.travel,scale:Math.min(devicePixelRatio||1,2)},renderer.motionPaths??=new Float32Array(128*4));renderer.params.boost=frame.boost;renderer.draw();if(state.native&&!(state.nativeHDR&&hdrQuery.matches&&state.displayMode==='auto'))applyNativeSettings();
   // Native gain-map HDR keeps its unfiltered browser image path.
   const layout=nativeProjection.layout,optics=projectionOptics(frame,layout.aperture,layout.width),glow=$('screenGlow'),dx=(optics.shift-optics.clipRight*.5)*projectionWidth;
   glow.style.transform=`translate(-50%,-50%) translateX(${dx}px) rotate(.22deg)`;
   glow.style.width=`${projectionWidth*Math.max(.15,1-optics.clipRight)}px`;
   light(frame.exposure,optics);room.dataset.phase=frame.phase;
 }
-function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='none';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
+function resetTransition(){cancelAnimationFrame(transitionFrame);transitionFrame=null;finishTransition?.();finishTransition=null;transporting=false;air.setTransport(false);const wasAperture=state.aperture;state.aperture=false;mountProjection(false);$('opticalGate').style.opacity='1';$('opticalGate').style.clipPath='none';$('opticalGate').style.transform='none';$('filmMotion').style.transform='none';nativeProjection.reset();$('screenGlow').style.transform='';$('screenGlow').style.width='';$('screenGlow').style.opacity='';$('lampAperture').style.opacity='0';$('lampAperture').style.clipPath='inset(0)';room.classList.remove('changing');audio.stopAdvance();renderer.params.focus=Number($('focus').value);renderer.params.motion=0;renderer.params.motionProfile=null;renderer.params.boost=1;renderer.draw();scene?.reset();if(wasAperture||layoutPending){layoutPending=false;fitScreen();}light(state.on?1:0);room.dataset.phase=state.on?'hold':'off';}
 function nextIndex(){const next=state.index+1;return next<state.slides.length?next:$('loop').checked&&state.slides.length?0:null;}
 function preloadNextDownload(){
   const index=nextIndex(),slide=index===null?null:state.slides[index];
@@ -245,7 +251,8 @@ function scheduleAuto(){
   // Download, filter and stage the next photo during this hold, rather than
   // appending all that work after the user's viewing interval has elapsed.
   prepareUpcoming();
-  autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=nextIndex();if(next===null){stopAuto();toast('本次放映结束');return;}await goTo(next);},Number($('interval').value)*1000);
+  const hold=Number($('interval').value)*1000;autoDeadline=performance.now()+hold;
+  autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=nextIndex();if(next===null){stopAuto();toast('本次放映结束');return;}await goTo(next);},hold);
 }
 
 function animateTransport(epoch,reverse,opening,onSwap){
@@ -271,7 +278,7 @@ function animateTransport(epoch,reverse,opening,onSwap){
         $('lampAperture').style.clipPath=`inset(0 ${f.clipRight*100}% 0 0)`;
         $('opticalGate').style.opacity='0';light(f.exposure,f);
       }else{
-        $('lampAperture').style.opacity='0';$('screenGlow').style.opacity='';setOptics(f);
+        $('lampAperture').style.opacity='0';$('screenGlow').style.opacity='';setOptics(f,{time:ms,opening});
       }
       room.dataset.phase=(opening?'startup-':'')+f.phase;
       if(!reduceMotion.matches)scene?.mechanism(opening?f.mechanicalMs:ms,reverse);
@@ -339,6 +346,7 @@ async function goTo(index){
 async function toggleAuto(){if(state.busy||state.importing)return;if(state.auto){stopAuto();return;}if(!state.on){const opening=power(),epoch=state.epoch;await opening;if(epoch!==state.epoch)return;}if(!state.on)return;state.auto=true;updateUI();scheduleAuto();}
 
 async function importFiles(files,{folder=false}={}){
+  if(state.exporting)return;
   if(state.importing||!state.ready)return;
   const all=Array.from(files);
   const accepted=(folder?all.filter(f=>/\.(jpe?g|png|webp|avif|gif|bmp|hdr|rgbe|heic|heif|tiff?)$/i.test(f.name)):all)
@@ -403,6 +411,7 @@ $('immersiveBtn').addEventListener('click',immersive);screen.addEventListener('d
 for(const event of ['pointermove','pointerdown','keydown','wheel','focusin'])document.addEventListener(event,showImmersiveControls,{passive:true});
 document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&state.immersive){state.immersive=false;room.classList.remove('immersive');$('immersiveBtn').setAttribute('aria-pressed','false');$('immersiveBtn').setAttribute('aria-label',t('进入全屏'));fitScreen();}});
 document.addEventListener('keydown',e=>{
+  if($('exportDialog')?.open)return;
   if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;
   if(e.target.closest('summary,button')&&(e.code==='Space'||e.key==='Enter'))return;
   if(e.key==='ArrowRight'){e.preventDefault();goTo(state.index+1);}else if(e.key==='ArrowLeft'){e.preventDefault();goTo(state.index-1);}else if(e.code==='Space'){e.preventDefault();toggleAuto();}
@@ -414,6 +423,10 @@ $('zoom').addEventListener('input',()=>{$('zoomValue').textContent=`${Math.round
 $('hdrEntryEV').addEventListener('input',()=>{const ev=Number($('hdrEntryEV').value);$('hdrEntryEVValue').textContent=`+${ev.toFixed(1)} EV`;nativeProjection.setExposureEV(ev);});
 $('depth').addEventListener('input',()=>{const value=$('depth').value;room.style.setProperty('--foreground-blur',`${value}px`);$('depthValue').textContent=Number(value).toFixed(1);machineLight.resize(room.clientWidth,room.clientHeight,scene,Number(value));});
 $('diffusion').addEventListener('input',()=>{wall.amount=Number($('diffusion').value);$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;light(exposure);});
+$('environmentGamma').addEventListener('input',()=>{
+  const gamma=Number($('environmentGamma').value);$('environmentGammaValue').textContent=gamma.toFixed(2);
+  environmentGamma.set(gamma);
+});
 $('airAmount').addEventListener('input',()=>{const value=Number($('airAmount').value);$('airAmountValue').textContent=`${Math.round(value*100)}%`;air.setAmount(value);});
 $('bloom').addEventListener('input',()=>{const value=Number($('bloom').value);$('bloomValue').textContent=`${Math.round(value*100)}%`;machineLight.setAmount(value);});
 $('topReflectance').addEventListener('input',()=>{const value=Number($('topReflectance').value);$('topReflectanceValue').textContent=`${Math.round(value*100)}%`;scene?.setTopReflectance(value);});
@@ -458,14 +471,45 @@ document.addEventListener('dragover',e=>{if(Array.from(e.dataTransfer?.types||[]
 document.addEventListener('dragleave',()=>{if(--dragDepth<=0){dragDepth=0;$('dropOverlay').hidden=true;}});
 document.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').hidden=true;if(e.dataTransfer?.files.length)importFiles(e.dataTransfer.files);});
 window.addEventListener('resize',fitScreen);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(autoTimer);audio.suspend();}else{if(state.on)audio.resume();scheduleAuto();}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(autoTimer);audio.suspend();}else if(!state.exporting){if(state.on)audio.resume();scheduleAuto();}});
 window.addEventListener('pagehide',()=>audio.suspend());
-window.addEventListener('pageshow',()=>{if(state.on)audio.resume();});
+window.addEventListener('pageshow',()=>{if(state.on&&!state.exporting)audio.resume();});
 // A Safari audio interruption may require a fresh context in a user gesture.
 // Retry on the next tap/key without changing the user's sound preference.
-for(const event of ['pointerdown','keydown'])document.addEventListener(event,()=>{if(state.on&&audio.enabled&&audio.context&&!document.hidden)audio.resume({gesture:true});},{capture:true,passive:true});
+for(const event of ['pointerdown','keydown'])document.addEventListener(event,()=>{if(state.on&&!state.exporting&&audio.enabled&&audio.context&&!document.hidden)audio.resume({gesture:true});},{capture:true,passive:true});
+
+// Only this small bridge is present during normal viewing.
+let exportModule,exportResume;
+const videoExportHost={
+  t,THREE,ProjectorScene,WallLight,AirLight,MachineLight,ProjectionRenderer,processRadiancePixels,processImagePixels,
+  projectionLayout,projectionOptics,transitionAt,startupAt,filmTravel:(aperture,width)=>(aperture+width)/2+1,
+  loadAudio:name=>audio.loadFile(name),
+  snapshot(){const ids=['interval','zoom','brightness','focus','depth','texture','diffusion','airAmount','bloom','topReflectance','machineLights','projectorY','projectorPitch','photoY','environmentGamma'];return{slides:state.slides.slice(),settings:Object.fromEntries(ids.map(id=>[id,Number($(id).value)])),sound:{enabled:audio.enabled,volume:audio.volume,fanVolume:audio.fanVolume}};},
+  async pause(signal){
+    while(state.busy){if(signal?.aborted)throw new DOMException('Canceled','AbortError');await delay(50);}
+    if(state.importing||state.exporting)throw new Error(t('请等待当前过片或装片结束'));
+    exportResume={auto:state.auto,remaining:autoTimer==null?null:Math.max(0,autoDeadline-performance.now())};
+    state.exporting=true;state.auto=false;clearTimeout(autoTimer);autoTimer=null;upcoming=null;
+    cancelAnimationFrame(air.frame);air.frame=null;air.exportPaused=true;audio.suspend();updateUI();
+  },
+  async resume(){
+    const saved=exportResume;exportResume=null;state.exporting=false;air.exportPaused=false;air.schedule();
+    if(state.on&&!document.hidden)await audio.resume();
+    if(saved?.auto&&state.on){state.auto=true;scheduleAuto();if(saved.remaining!=null&&autoTimer!=null){clearTimeout(autoTimer);autoDeadline=performance.now()+saved.remaining;autoTimer=setTimeout(async()=>{if(!state.auto)return;const next=nextIndex();if(next===null){stopAuto();return;}await goTo(next);},saved.remaining);}}
+    updateUI();
+  },
+};
+$('exportBtn').addEventListener('click',async()=>{
+  $('exportBtn').disabled=true;
+  try{exportModule??=await import('./video-export.js');exportModule.openVideoExport(videoExportHost);}
+  catch(error){toast(t('无法打开视频导出：{error}',{error:error.message}));}
+  finally{updateUI();}
+});
 
 try{scene=new ProjectorScene($('projector'));}catch(error){console.warn('Projector geometry unavailable:',error);toast('当前浏览器无法绘制三维机身，照片仍可放映');}
+environmentGamma=new LiveEnvironmentGamma({room,element:$('environment'),wall,air,scene,machine:machineLight,state,renderer,
+  settings:()=>({depth:Number($('depth').value),projectorY:Number($('projectorY').value)}),
+  failed:()=>{$('environmentGamma').value='1';$('environmentGammaValue').textContent='1.00';toast('当前浏览器无法应用环境 Gamma，已恢复原始明暗');}});
 renderTray();fitScreen();
 audio.preload();
 const machineReady=machineLight.init().catch(()=>{machineLight.renderer.canvas.hidden=true;});

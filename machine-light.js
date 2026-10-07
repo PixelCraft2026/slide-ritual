@@ -13,7 +13,7 @@ export class MachineLight {
     const r=scene.canvas.getBoundingClientRect(),key=[w,h,r.left,r.top,r.width,r.height,depth,scene.pitch].join(',');if(key===this.key)return;this.key=key;
     scene.scene.updateMatrixWorld(true);
     const scale=Math.min(1,1440/w),width=Math.round(w*scale),height=Math.round(h*scale);
-    const seed=document.createElement('canvas');seed.width=width;seed.height=height;const ctx=seed.getContext('2d');ctx.scale(scale,scale);
+    const seed=document.createElement('canvas');seed.width=width;seed.height=height;const ctx=seed.getContext('2d',{colorType:'float16'});ctx.scale(scale,scale);
     const project=(o,x,y,z=0)=>{const v=o.localToWorld(new THREE.Vector3(x,y,z)).project(scene.camera);return [r.left+(v.x+1)*r.width/2,r.top+(1-v.y)*r.height/2];};
     const polygon=points=>{ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();};
     for(const vent of scene.vents.children){
@@ -25,16 +25,17 @@ export class MachineLight {
     }
     const slit=scene.scene.getObjectByName('transport-underarm-light-slit');ctx.fillStyle='rgba(255,226,170,.70)';polygon([[-.32,.007,-.032],[.32,.007,-.032],[.32,.007,.032],[-.32,.007,.032]].map(p=>project(slit,...p)));ctx.fill();
     const slot=scene.scene.getObjectByName('side-light-slot');ctx.fillStyle='rgba(255,226,170,.58)';polygon(slot.userData.glowCorners.map(p=>project(slot,...p)));ctx.fill();
-    const halo=document.createElement('canvas');halo.width=width;halo.height=height;const hc=halo.getContext('2d',{willReadFrequently:true});hc.globalCompositeOperation='lighter';
+    const halo=document.createElement('canvas');halo.width=width;halo.height=height;const hc=halo.getContext('2d',{colorType:'float16',willReadFrequently:true});hc.globalCompositeOperation='lighter';
     // The broad skirts remain visible against blackout without isolated white shapes.
     for(const [blur,alpha] of [[2+depth*.7,.22],[7+depth*1.5,.90],[20+depth*3,1],[42+depth*4,.80]]){hc.filter=`blur(${blur*scale}px)`;hc.globalAlpha=alpha;hc.drawImage(seed,0,0);}
     hc.filter='none';hc.globalAlpha=1;
-    const pixels=hc.getImageData(0,0,width,height).data,data=new Float32Array(width*height*4);
+    const read=ctx=>{try{return ctx.getImageData(0,0,width,height,{pixelFormat:'rgba-float16'}).data;}catch{return ctx.getImageData(0,0,width,height).data;}};
+    const pixels=read(hc),precise=pixels.BYTES_PER_ELEMENT===2,unit=precise?1:255,data=new Float32Array(width*height*4);
     // Keep the optical skirt broad while preserving the dark ribs between
     // windows. The geometry already supplies the direct light at their centres.
-    const mask=document.createElement('canvas');mask.width=width;mask.height=height;const mc=mask.getContext('2d',{willReadFrequently:true});mc.filter=`blur(${(depth+2)*scale}px)`;mc.drawImage(seed,0,0);const m=mc.getImageData(0,0,width,height).data;let peak=1;for(let i=3;i<m.length;i+=4)peak=Math.max(peak,m[i]);
-    for(let i=0;i<data.length;i+=4){for(let c=0;c<3;c++)data[i+c]=srgbToLinear(pixels[i+c]/255)*.80;data[i+3]=pixels[i+3]/255*(1-.65*m[i+3]/peak);pixels[i+3]=Math.round(data[i+3]*255);}
-    if(this.renderer.mode==='native'){const image=hc.createImageData(width,height);image.data.set(pixels);hc.putImageData(image,0,0);}
+    const mask=document.createElement('canvas');mask.width=width;mask.height=height;const mc=mask.getContext('2d',{colorType:'float16',willReadFrequently:true});mc.filter=`blur(${(depth+2)*scale}px)`;mc.drawImage(seed,0,0);const m=read(mc);let peak=1/unit;for(let i=3;i<m.length;i+=4)peak=Math.max(peak,m[i]);
+    for(let i=0;i<data.length;i+=4){for(let c=0;c<3;c++)data[i+c]=srgbToLinear(pixels[i+c]/unit)*.80;data[i+3]=pixels[i+3]/unit*(1-.65*m[i+3]/peak);pixels[i+3]=data[i+3]*unit;}
+    if(this.renderer.mode==='native'){const image=precise?new ImageData(pixels,width,height,{pixelFormat:'rgba-float16'}):hc.createImageData(width,height);if(!precise)image.data.set(pixels);hc.putImageData(image,0,0);}
     this.source={data,width,height,colorSpace:'srgb',hdr:false};this.renderer.resize(w,h);this.renderer.upload(this.source);this.fallback=halo;this.draw();
   }
   setAmount(value){this.amount=Math.max(0,Math.min(1,Number(value)||0));this.renderer.params.opacity=this.amount;this.draw();}

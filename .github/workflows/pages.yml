@@ -27,12 +27,12 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Install build dependencies
+        run: npm ci
+      - name: Build offline and static website
+        run: npm run build
       - name: Run unit tests
         run: npm test
-      - name: Generate offline version
-        run: node tools/build-standalone.mjs
-      - name: Build static website
-        run: npm run build:pages
       - name: Configure GitHub Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Upload website

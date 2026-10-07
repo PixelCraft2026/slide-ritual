@@ -1,5 +1,6 @@
 import { CHANGE_MS, EXIT_MS, STARTUP_CHANGE_MS, EXPOSURE_PEAK, filmTravel, motionRadius, transitionAt, startupAt } from './transition.js';
 import { ProjectionRenderer } from './renderer.js';
+import { PHOTO_UNIFORM_BYTES,photoMotion } from './photo-motion.js';
 
 export const DEFAULT_HDR_ENTRY_EV=1;
 export function nativeExposureOpacity(frame,reduced=false,ev=DEFAULT_HDR_ENTRY_EV){
@@ -56,19 +57,19 @@ export class NativeProjection {
         const canvas=document.createElement('canvas');
         Object.assign(canvas.style,{position:'absolute',inset:'0',width:'100%',height:'100%',pointerEvents:'none',opacity:'0',willChange:'opacity'});
         canvas.style.setProperty('dynamic-range-limit','no-limit');canvas.setAttribute('aria-hidden','true');canvas.dataset.nativeExposure='hdr';
-        const renderer=new ProjectionRenderer(canvas),shared=this.exposureRenderer;
+        const renderer=new ProjectionRenderer(canvas,undefined,{photo:true}),shared=this.exposureRenderer;
         Object.assign(renderer,{mode:'webgpu',device:shared.device,pipeline:shared.pipeline,sampler:shared.sampler,hdr:true,hdrSupported:true,configuredHDR:true});
         renderer.params.texture=0;
         resource={canvas,renderer,source};this.exposureLayers.set(source,resource);
-        renderer.gpu=canvas.getContext('webgpu');renderer.gpu.configure({device:renderer.device,format:'rgba16float',alphaMode:'opaque',colorSpace:'display-p3',toneMapping:{mode:'extended'}});
+        renderer.gpu=canvas.getContext('webgpu');renderer.gpu.configure({device:renderer.device,format:'rgba16float',alphaMode:'premultiplied',colorSpace:'display-p3',toneMapping:{mode:'extended'}});
         const configuration=renderer.gpu.getConfiguration?.();if(configuration&&configuration.toneMapping?.mode!=='extended')throw new Error('Extended HDR canvas unavailable');
-        renderer.uniform=renderer.device.createBuffer({size:48,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+        renderer.uniform=renderer.device.createBuffer({size:PHOTO_UNIFORM_BYTES,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
       }
       const dpr=Math.min(globalThis.devicePixelRatio||1,2),viewport={width:Math.max(1,Math.round(layout.width*dpr)),height:Math.max(1,Math.round(layout.height*dpr))};
-      if(resource.canvas.width!==viewport.width)resource.canvas.width=viewport.width;
-      if(resource.canvas.height!==viewport.height)resource.canvas.height=viewport.height;
+      resource.renderer.resize(layout.width,layout.height,filmTravel(layout.aperture||layout.width,layout.width));
       resource.canvas.hidden=false;
       resource.layoutWidth=layout.width;
+      resource.renderer.params.motionProfile=null;
       resource.renderer.params.boost=2**this.exposureEV;
       // Upload the actual HDR pixels before transport. A bounded GPU pass
       // supplies velocity blur; settling fades this canvas over the original.
@@ -96,12 +97,13 @@ export class NativeProjection {
     if(changed&&this.active&&this.transport)this.play();
   }
   setLayout(layout){this.travel=filmTravel(layout.aperture,layout.width);this.layout=layout;}
-  renderMotion(frame){
+  renderMotion(frame,context){
     const resource=this.activeExposure;
     if(!this.hdr||!resource||this.transport?.reduced||!['out','in','settle'].includes(frame.phase))return;
-    const renderer=resource.renderer,blur=motionRadius(frame,this.travel)*resource.canvas.width/resource.layoutWidth,boost=nativePhotoBoost(frame,this.exposureEV);
-    if(renderer.params.motion===blur&&renderer.params.boost===boost)return;
-    renderer.params.motion=blur;renderer.params.boost=boost;renderer.draw();
+    const renderer=resource.renderer,boost=nativePhotoBoost(frame,this.exposureEV);
+    const profile=photoMotion(frame,{time:Math.max(0,performance.now()-(this.transport?.startedAt??performance.now())),opening:this.transport?.opening,...context,travel:this.travel,scale:renderer.photoSize.width/resource.layoutWidth,neutralGain:true},renderer.motionPaths??=new Float32Array(128*4));
+    if(!profile&&!renderer.params.motionProfile&&renderer.params.boost===boost)return;
+    renderer.params.motionProfile=profile;renderer.params.boost=boost;renderer.draw();
   }
   async prepare(image,layout,{hdr=false,displayMode='auto',brightness=1,focus=0,boost=1,exposure=null}={}){
     const ticket=this.prepareTicket=(this.prepareTicket||0)+1;
@@ -148,7 +150,7 @@ export class NativeProjection {
   async prepareExit(reduced=false){
     if(!this.active||reduced)return;
     const pending={startedAt:performance.now(),opening:false,reduced,warming:true};this.transport=pending;
-    this.renderMotion(transitionAt(0));
+    this.renderMotion(transitionAt(0),{time:0,opening:false});
     if(this.activeExposure)await this.activeExposure.renderer.device.queue.onSubmittedWorkDone();
     if(this.transport!==pending)return;
     this.play();
@@ -180,9 +182,9 @@ export class NativeProjection {
       for(const animation of this.animations)animation.currentTime=elapsed;
     }catch{this.cancel();} // Fixed-clip translations also work without WAAPI.
   }
-  frame(frame){
+  frame(frame,context){
     if(!this.active)return;
-    this.renderMotion(frame);
+    this.renderMotion(frame,context);
     if(this.animations.length)return;
     const wipe=nativeWipe(frame,this.travel);this.gate.style.transform=wipe.gate;this.motion.style.transform=wipe.contents;
     if(this.texture)this.texture.style.transform=wipe.gate;
@@ -190,5 +192,5 @@ export class NativeProjection {
   }
   cancel(){for(const animation of this.animations)animation.cancel();this.animations=[];if(this.exposure)this.exposure.style.opacity='0';}
   clearStaging(){this.prepareTicket=(this.prepareTicket||0)+1;if(this.staging){this.staging.hidden=true;this.staging.replaceChildren();}}
-  reset(){this.transport=null;this.cancel();this.clearStaging();if(this.active)this.frame({shift:0,clipRight:0});}
+  reset(){this.transport=null;this.cancel();this.clearStaging();if(this.activeExposure)this.activeExposure.renderer.params.motionProfile=null;if(this.active)this.frame({shift:0,clipRight:0});}
 }
