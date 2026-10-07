@@ -1,4 +1,6 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { versionModuleUrls, versionHtmlUrls } from './asset-version.mjs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,12 +22,18 @@ for (const file of files) {
 }
 rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
+const hash = createHash('sha256');
+for (const file of files.filter(file=>file.endsWith('.js')||file==='index.html'||file==='style.css')) hash.update(file).update('\0').update(readFileSync(join(root,file)));
+hash.update(readFileSync(fileURLToPath(import.meta.url))).update(readFileSync(join(root,'tools/asset-version.mjs')));
+const version = hash.digest('hex').slice(0,12);
 let bytes = 0;
 for (const file of files) {
   const destination = join(output, file);
   mkdirSync(dirname(destination), { recursive: true });
-  copyFileSync(join(root, file), destination);
+  if(file.endsWith('.js')) writeFileSync(destination,versionModuleUrls(readFileSync(join(root,file),'utf8'),version));
+  else if(file==='index.html') writeFileSync(destination,versionHtmlUrls(readFileSync(join(root,file),'utf8'),version));
+  else copyFileSync(join(root, file), destination);
   bytes += statSync(destination).size;
 }
 writeFileSync(join(output, '.nojekyll'), '');
-console.log(`GitHub Pages: ${files.length + 1} files, ${(bytes / 1048576).toFixed(2)} MiB in dist/`);
+console.log(`Release ${version}: GitHub Pages: ${files.length + 1} files, ${(bytes / 1048576).toFixed(2)} MiB in dist/`);

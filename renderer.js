@@ -1,10 +1,12 @@
 import { toHalf } from './hdr.js';
+import { canvasPresentation } from './canvas-compat.js';
 import { processImagePixels, prepareImageProjection, projectionPixelsSize } from './pixels.js';
 import { PHOTO_UNIFORM_BYTES,photoPadding } from './photo-motion.js';
 
 // Projection filtering is linear-light; browser decode uses its native color
 // pipeline. Canvas presentation uses extended sRGB transfer.
 const wgsl = `
+override standardOutput:u32=0u;
 struct Params { effects:vec4f, source:vec4f, size:vec4f, photo:vec4f, paths:array<vec4f,128> }
 @group(0) @binding(0) var tex:texture_2d<f32>;
 @group(0) @binding(1) var sam:sampler;
@@ -30,18 +32,22 @@ fn focused(uv:vec2f,dx:vec2f,dy:vec2f)->vec4f {
     for(var i=0u;i<128u;i++){if(i>=u32(p.photo.z)){break;}let path=p.paths[i];let at=uv-vec2f(path.x/p.photo.x,0.);let sample=focused(at,dx,dy);let a=sample.a*visible(at)*path.w;sum+=sample.rgb*path.z*a;alpha+=a;}
     c=sum/max(alpha,.00001);coverage=alpha/p.photo.z;
   }
-  if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
+  if(standardOutput==1u){
+    if(p.source.z>.5){c=vec3f(dot(c,vec3f(1.22494018,-.22494018,0.)),dot(c,vec3f(-.04205695,1.04205695,0.)),dot(c,vec3f(-.01963755,-.07863605,1.09827360)));}
+  }else if(p.source.z<.5) { c=vec3f(dot(c,vec3f(.82246197,.17753803,0.)),dot(c,vec3f(.0331942,.9668058,0.)),dot(c,vec3f(.01708263,.07239744,.91051993))); }
   c*=p.effects.x;
-  let l=max(dot(c,vec3f(.22897456,.69173852,.07928691)),0.00001);
+  let weights=select(vec3f(.22897456,.69173852,.07928691),vec3f(.2126,.7152,.0722),standardOutput==1u);let l=max(dot(c,weights),0.00001);
   if(p.source.y>.5 && p.source.x<.5) { let t=clamp((l-.58)/.42,0.,1.);c*=1.+(p.source.w-1.)*t*t*(3.-2.*t); }
   if(p.source.y<.5 && p.source.x>.5) { c*=min(1.,(l/(1.+l)*1.25))/l; }
   let v=dot(uv-.5,uv-.5);c*=1.-v*.22*p.effects.z;
   let noise=fract(sin(dot(o.pos.xy-vec2f((p.size.x-p.photo.x)*.5,0.),vec2f(12.9898,78.233)))*43758.5453)-.5;
   c*=vec3f(1.,1.-.009*p.effects.z,1.-.025*p.effects.z);
   var encoded=encode(c);if(p.effects.w>0. && p.effects.w!=1.){encoded=pow(max(encoded,vec3f(0.)),vec3f(1./p.effects.w));}let grain=noise*.6/255.*p.effects.z*smoothstep(.015,.08,max(encoded.r,max(encoded.g,encoded.b)));
-  // rgba16float canvas values are encoded in its declared colorSpace.
-  if(p.size.z>.5){let alpha=clamp(coverage*p.size.w,0.,1.);return vec4f((encoded+vec3f(grain))*alpha,alpha);}
-  return vec4f(encoded+vec3f(grain),1.);
+  // Values are encoded in the presentation color space. SDR premultiplication
+  // follows clipping, so transparent edge RGB never exceeds its alpha.
+  var display=encoded+vec3f(grain);if(standardOutput==1u){display=clamp(display,vec3f(0),vec3f(1));}
+  if(p.size.z>.5){let alpha=clamp(coverage*p.size.w,0.,1.);return vec4f(display*alpha,alpha);}
+  return vec4f(display,1.);
 }`;
 
 const vertexGL=`#version 300 es
@@ -75,6 +81,7 @@ export async function decodeImage(image,viewport) {
 export class ProjectionRenderer {
   constructor(canvas,onFailure,{transparent=false,photo=false}={}){this.canvas=canvas;this.onFailure=onFailure;this.transparent=transparent;this.photo=photo;this.alpha=transparent||photo;this.mode='none';this.hdr=false;this.hdrSupported=false;this.source=null;this.params={brightness:1,focus:0,texture:.22,highlight:2,motion:0,boost:1,opacity:1};}
   async init({sdrOnly=false}={}){
+    this.presentation=canvasPresentation();
     if(navigator.gpu&&!sdrOnly){
       try{
         const adapter=await navigator.gpu.requestAdapter();
@@ -82,15 +89,15 @@ export class ProjectionRenderer {
         this.device=await adapter.requestDevice();this.gpu=this.canvas.getContext('webgpu');
         if(!this.gpu)throw new Error('No WebGPU context');
         this.mode='webgpu';
-        this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.alpha?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:'extended'}});
-        this.hdrSupported=this.gpu.getConfiguration?.().toneMapping?.mode==='extended';
+        this.gpu.configure({device:this.device,format:this.presentation.format,alphaMode:this.alpha?'premultiplied':'opaque',colorSpace:this.presentation.colorSpace,toneMapping:{mode:this.presentation.floating?'extended':'standard'}});
+        this.hdrSupported=this.presentation.floating&&this.gpu.getConfiguration?.().toneMapping?.mode==='extended';
         this.configure(false);
         this.device.addEventListener('uncapturederror',e=>{e.preventDefault();this.onFailure?.(e.error.message);});
         this.device.lost.then(info=>{if(info.reason!=='destroyed')this.onFailure?.('显卡渲染连接已中断，请重新载入页面');});
         const module=this.device.createShaderModule({code:wgsl});
         const errors=(await module.getCompilationInfo()).messages.filter(m=>m.type==='error');
         if(errors.length)throw new Error(errors.map(m=>m.message).join('\n'));
-        this.pipeline=await this.device.createRenderPipelineAsync({layout:'auto',vertex:{module,entryPoint:'vs'},fragment:{module,entryPoint:'fs',targets:[{format:'rgba16float'}]},primitive:{topology:'triangle-list'}});
+        this.pipeline=await this.device.createRenderPipelineAsync({layout:'auto',vertex:{module,entryPoint:'vs'},fragment:{module,entryPoint:'fs',constants:{standardOutput:this.presentation.floating?0:1},targets:[{format:this.presentation.format}]},primitive:{topology:'triangle-list'}});
         this.uniform=this.device.createBuffer({size:PHOTO_UNIFORM_BYTES,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
         this.sampler=this.device.createSampler({magFilter:'linear',minFilter:'linear'});
         return;
@@ -112,7 +119,7 @@ export class ProjectionRenderer {
     this.mode='webgl';this.hdr=false;
     this.canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();this.onFailure?.('显卡渲染连接已中断，请重新载入页面');});
   }
-  configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu'&&this.configuredHDR!==this.hdr){this.gpu.configure({device:this.device,format:'rgba16float',alphaMode:this.alpha?'premultiplied':'opaque',colorSpace:'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.configuredHDR=this.hdr;}this.draw();}
+  configure(hdr){this.hdr=Boolean(hdr&&this.hdrSupported);if(this.mode==='webgpu'&&this.configuredHDR!==this.hdr){this.gpu.configure({device:this.device,format:this.presentation?.format||'rgba16float',alphaMode:this.alpha?'premultiplied':'opaque',colorSpace:this.presentation?.colorSpace||'display-p3',toneMapping:{mode:this.hdr?'extended':'standard'}});this.configuredHDR=this.hdr;}this.draw();}
   prepare(source,viewport={width:this.canvas.width,height:this.canvas.height}){
     this.halfSources??=new WeakMap();
     if(!this.halfSources.has(source))this.halfSources.set(source,new Map());

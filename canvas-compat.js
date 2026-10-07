@@ -10,3 +10,11 @@ export function lightCanvasOptions({presentation=false,...options}={}){
   return presentation?{colorType:'unorm8',...options}:{colorType:'float16',...options,willReadFrequently:true};
 }
 export function lightContext(canvas,options){return canvas.getContext('2d',lightCanvasOptions(options));}
+
+// Fullscreen can reallocate Android's compositor surface. Keep all custom GPU
+// presentation on a standard native format, even on HDR-capable devices. This
+// controls presentation only: floating textures/linear-light filtering remain.
+export function canvasPresentation(gpu=globalThis.navigator?.gpu,nav=globalThis.navigator){
+  if(androidCanvasWorkaround(nav))return {format:gpu?.getPreferredCanvasFormat?.()==='bgra8unorm'?'bgra8unorm':'rgba8unorm',colorSpace:'srgb',floating:false};
+  return {format:'rgba16float',colorSpace:'display-p3',floating:true};
+}
