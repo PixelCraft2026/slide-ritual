@@ -1,6 +1,7 @@
 import * as THREE from './vendor/three.module.js';
 import { mechanismAt, SLIDE_PITCH, GATE_Z, CHANGE_MS } from './transition.js';
 import { snapshotLight } from './atmosphere.js';
+import { lightContext } from './canvas-compat.js';
 import { wallSamples,wallField,wallPixels } from './wall-diffusion.js';
 
 // Rear view reconstructed from the P150 photographs, including back.JPG.
@@ -450,7 +451,7 @@ export class ProjectorScene {
 // Broad, spatially varying diffuse return from the actual image. It is rebuilt
 // only on image/viewport changes; the shutter modulates this preblurred light.
 export class WallLight {
-  constructor(canvas){this.canvas=canvas;this.ctx=canvas.getContext('2d',{colorType:'float16'});this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
+  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation});this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
   sampleSource(source){
     const sample=wallSamples(source);return{source:sample,color:sample.color};
   }
@@ -463,7 +464,7 @@ export class WallLight {
   resize(w,h,sw,sh,centerY=h*(w<600?.34:.31)){const layout={w,h,sw,sh,centerY};if(this.layoutKey(layout)===this.layoutKey(this))return;this.setLayout(layout);this.rebuild();}
   makeBuffer(source,layout){
     const field=wallField(source,layout),canvas=document.createElement('canvas');canvas.width=field.width;canvas.height=field.height;
-    const ctx=canvas.getContext('2d',{colorType:'float16'}),float=ctx.getContextAttributes?.().colorType==='float16'&&typeof Float16Array==='function';
+    const ctx=lightContext(canvas),float=ctx.getContextAttributes?.().colorType==='float16'&&typeof Float16Array==='function';
     const data=wallPixels(field,float),pixels=float?new ImageData(data,field.width,field.height,{colorSpace:'srgb',pixelFormat:'rgba-float16'}):ctx.createImageData(field.width,field.height);
     if(!float)pixels.data.set(data);
     ctx.putImageData(pixels,0,0);return canvas;
@@ -484,13 +485,17 @@ export class WallLight {
   beginFrame(){this.batchDepth=(this.batchDepth||0)+1;}
   endFrame(){if(this.batchDepth>0&&--this.batchDepth===0&&this.drawPending){this.drawPending=false;this.draw(this.exposure,this.pendingOptics);}}
   draw(exposure,optics){
-    this.exposure=exposure;if(this.batchDepth){this.pendingOptics=optics;this.drawPending=true;return;}
+    this.exposure=exposure;this.optics=optics;if(this.batchDepth){this.pendingOptics=optics;this.drawPending=true;return;}
     const ctx=this.ctx,w=this.canvas.width,h=this.canvas.height;ctx.clearRect(0,0,w,h);
+    this.drawTo(ctx,w,h,this.scale);this.onDraw?.();
+  }
+  drawTo(ctx,w=this.w,h=this.h,scale=1){
+    const exposure=this.exposure,optics=this.optics;
     if(this.buffer){
       ctx.save();let gain=Math.max(0,exposure)*Math.max(0,Math.min(6,this.amount))*.82;
       if(optics&&(optics.phase==='out'||optics.phase==='in')){
         // The diffuse return follows the moving, partially exposed film window.
-        const dx=(optics.shift-optics.clipRight*.5)*this.sw*this.scale;
+        const dx=(optics.shift-optics.clipRight*.5)*this.sw*scale;
         ctx.translate(w*.5+dx,0);ctx.scale(.55+.45*(1-optics.clipRight),1);ctx.translate(-w*.5,0);
       }
       // Add cached radiance instead of saturating the globalAlpha control at
@@ -499,6 +504,5 @@ export class WallLight {
       while(gain>0){ctx.globalAlpha=Math.min(1,gain);ctx.drawImage(this.buffer,-w,-h,w*3,h*3);gain-=1;}
       ctx.restore();
     }
-    this.onDraw?.();
   }
 }

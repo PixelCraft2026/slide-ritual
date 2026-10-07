@@ -1,3 +1,5 @@
+import { androidCanvasWorkaround,lightContext } from './canvas-compat.js';
+
 // Environment-only presentation. The photo and native HDR image never enter
 // the environment surface. Gamma 1 keeps the original DOM compositor entirely intact.
 export class GammaSurface {
@@ -9,14 +11,14 @@ export class GammaSurface {
     const v=shader(g.VERTEX_SHADER,`#version 300 es
       out vec2 uv;void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);uv=p;gl_Position=vec4(p*2.-1.,0.,1.);}`);
     const f=shader(g.FRAGMENT_SHADER,`#version 300 es
-      precision highp float;uniform sampler2D image;uniform float gamma;in vec2 uv;out vec4 color;
-      void main(){vec4 p=texture(image,uv);vec3 c=pow(max(p.rgb,vec3(0)),vec3(1./gamma));
+      precision highp float;uniform highp sampler2D image;uniform float gamma;uniform bool flipSource;in vec2 uv;out vec4 color;
+      void main(){vec4 p=texture(image,vec2(uv.x,flipSource?1.-uv.y:uv.y));vec3 c=pow(max(p.rgb,vec3(0)),vec3(1./gamma));
         float n=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(.06711056,.00583715))))-.5;
         c+=vec3(n/255.*smoothstep(0.,1./255.,max(c.r,max(c.g,c.b))));
         color=vec4(clamp(c,0.,1.)*p.a,p.a);}`);
     const p=this.program=g.createProgram();g.attachShader(p,v);g.attachShader(p,f);g.linkProgram(p);g.deleteShader(v);g.deleteShader(f);
     if(!g.getProgramParameter(p,g.LINK_STATUS))throw new Error(g.getProgramInfoLog(p));
-    g.useProgram(p);this.gamma=g.getUniformLocation(p,'gamma');this.texture=g.createTexture();g.bindTexture(g.TEXTURE_2D,this.texture);
+    g.useProgram(p);this.gamma=g.getUniformLocation(p,'gamma');this.flipSource=g.getUniformLocation(p,'flipSource');this.texture=g.createTexture();g.bindTexture(g.TEXTURE_2D,this.texture);
     for(const axis of [g.TEXTURE_WRAP_S,g.TEXTURE_WRAP_T])g.texParameteri(g.TEXTURE_2D,axis,g.CLAMP_TO_EDGE);
     for(const filter of [g.TEXTURE_MIN_FILTER,g.TEXTURE_MAG_FILTER])g.texParameteri(g.TEXTURE_2D,filter,g.LINEAR);
     g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,true);g.pixelStorei(g.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);g.pixelStorei(g.UNPACK_COLORSPACE_CONVERSION_WEBGL,g.NONE);
@@ -26,14 +28,21 @@ export class GammaSurface {
     if(this.canvas.width!==width)this.canvas.width=width;
     if(this.canvas.height!==height)this.canvas.height=height;
     g.viewport(0,0,width,height);g.useProgram(this.program);g.bindTexture(g.TEXTURE_2D,this.texture);
-    const float=source.getContext('2d')?.getContextAttributes?.().colorType==='float16';
-    g.texImage2D(g.TEXTURE_2D,0,float?g.RGBA16F:g.RGBA,g.RGBA,float?g.HALF_FLOAT:g.UNSIGNED_BYTE,source);
+    const ctx=source.getContext('2d'),float=ctx?.getContextAttributes?.().colorType==='float16',typed=androidCanvasWorkaround();
+    g.uniform1i(this.flipSource,typed?1:0);g.pixelStorei(g.UNPACK_FLIP_Y_WEBGL,!typed);
+    if(typed){
+      // Do not import a floating Canvas/ImageBitmap through Android's shared
+      // GPU-image path. Upload the CPU cache as ordinary texture storage.
+      let data;try{data=ctx.getImageData(0,0,source.width,source.height,{pixelFormat:float?'rgba-float16':'rgba-unorm8'}).data;}catch{data=ctx.getImageData(0,0,source.width,source.height).data;}
+      const half=data.BYTES_PER_ELEMENT===2,pixels=half?new Uint16Array(data.buffer,data.byteOffset,data.length):data;
+      g.texImage2D(g.TEXTURE_2D,0,half?g.RGBA16F:g.RGBA,source.width,source.height,0,g.RGBA,half?g.HALF_FLOAT:g.UNSIGNED_BYTE,pixels);
+    }else g.texImage2D(g.TEXTURE_2D,0,float?g.RGBA16F:g.RGBA,g.RGBA,float?g.HALF_FLOAT:g.UNSIGNED_BYTE,source);
     g.uniform1f(this.gamma,gamma);g.drawArrays(g.TRIANGLES,0,3);return this.canvas;
   }
   dispose(){const g=this.gl;g.deleteTexture(this.texture);g.deleteProgram(this.program);g.getExtension('WEBGL_lose_context')?.loseContext();this.canvas.remove();}
 }
 
-const floatCanvas=()=>{const canvas=document.createElement('canvas');canvas.getContext('2d',{colorType:'float16'});return canvas;};
+const floatCanvas=()=>{const canvas=document.createElement('canvas');lightContext(canvas);return canvas;};
 class GPUEnvironmentSurface {
   constructor(renderer){
     this.device=renderer.device;this.canvas=document.createElement('canvas');this.context=this.canvas.getContext('webgpu');
@@ -73,7 +82,7 @@ export class LiveEnvironmentGamma {
   }
   initialize(){
     if(this.back)return;
-    try{this.back=this.host.renderer.mode==='webgpu'?new GPUEnvironmentSurface(this.host.renderer):new GammaSurface();}
+    try{this.back=!androidCanvasWorkaround()&&this.host.renderer.mode==='webgpu'?new GPUEnvironmentSurface(this.host.renderer):new GammaSurface();}
     catch(error){this.back?.dispose();this.back=null;throw error;}
     this.back.canvas.className='gamma-environment gamma-background';this.host.element.append(this.back.canvas);
     this.bottom=floatCanvas();this.back.canvas.addEventListener('webglcontextlost',()=>this.fail());
@@ -112,7 +121,10 @@ export class LiveEnvironmentGamma {
       const x=this.bottom.getContext('2d');x.setTransform(k,0,0,k,0,0);x.clearRect(0,0,w,h);
       const cy=h*(state.on?.37:.38),rx=Math.hypot(w*.5,h*(state.on?.63:.62)),ry=rx*h/w;
       ellipse(x,w,h,w*.5,cy,rx,ry,state.on?[[0,'#080605'],[.66,'#020202'],[1,'#000']]:[[0,'#171310'],[.66,'#080706'],[1,'#020202']]);
-      x.drawImage(wall.canvas,0,0,w,h);x.drawImage(air.canvas,0,0,w,h);
+      if(androidCanvasWorkaround()){
+        // Curve the unquantized cached light, not the 8-bit presentation canvas.
+        wall.drawTo(x,w,h);air.drawTo(x);
+      }else{x.drawImage(wall.canvas,0,0,w,h);x.drawImage(air.canvas,0,0,w,h);}
       const f=air.optics,shift=f?(f.shift-f.clipRight*.5)*wall.sw:0,width=wall.sw*Math.max(.15,1-(f?.clipRight||0)),spill=getComputedStyle(this.host.room).getPropertyValue('--spill');
       x.save();x.translate(w/2+shift,wall.centerY);x.rotate(.22*Math.PI/180);x.globalAlpha=Math.min(1,emitted*.3);x.filter=`blur(${16*k}px)`;x.fillStyle=`rgba(${spill},.26)`;x.fillRect(-width/2,-wall.sh/2,width,wall.sh);x.restore();
       // The native WebGPU surface stays float16 through CSS scaling, so broad

@@ -20,7 +20,7 @@ export class ExportRenderer{
     this.scene=new ProjectorScene(canvasRect(...Object.values(this.machineRect)));
     this.scene.renderer.setPixelRatio(this.scale);this.scene.renderer.setSize(mw,mh,false);
     this.scene.setPitch(snapshot.settings.projectorPitch);this.scene.setTopReflectance(snapshot.settings.topReflectance);this.scene.setEmitterAmount(snapshot.settings.machineLights);
-    this.wall=new WallLight(document.createElement('canvas'));this.wall.amount=snapshot.settings.diffusion;
+    this.wall=new WallLight(document.createElement('canvas'),{presentation:false});this.wall.amount=snapshot.settings.diffusion;
     this.air=new AirLight(document.createElement('canvas'),{manual:true});this.air.amount=snapshot.settings.airAmount;
     // Detach automatic animation; export owns absolute time and sampling.
     this.air.schedule=()=>{};this.air.shouldAnimate=()=>false;

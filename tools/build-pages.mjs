@@ -8,7 +8,7 @@ if (dirname(output) !== root || output === root) throw new Error('Invalid Pages 
 if (existsSync(output) && lstatSync(output).isSymbolicLink()) throw new Error('Pages output must not be a symbolic link');
 
 const files = [
-  'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js', 'photo-motion.js', 'environment-gamma.js', 'resample.js', 'pixels.js',
+  'index.html', 'style.css', 'app.js', 'hdr.js', 'renderer.js', 'photo-motion.js', 'canvas-compat.js', 'environment-gamma.js', 'resample.js', 'pixels.js',
   'scene.js', 'wall-diffusion.js', 'transition.js', 'atmosphere.js', 'machine-light.js', 'audio.js', 'native-projection.js', 'gain-map.js', 'i18n.js',
   'darkroom.html', 'video-export.js', 'vendor/three.module.js', 'vendor/LICENSE-three', 'vendor/LICENSE-mediabunny',
   'assets/favicon.svg', 'assets/ice lake.jpg', 'assets/fish lantern.jpg', 'assets/observatory.jpg',

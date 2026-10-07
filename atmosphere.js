@@ -1,3 +1,5 @@
+import { androidCanvasWorkaround,lightContext } from './canvas-compat.js';
+
 // A restrained screen-space approximation of illuminated air. The HDR photo
 // remains on its own, unfiltered surface above this pass.
 export function supportsCanvasBlur(){
@@ -39,14 +41,14 @@ export function blurLightPixels(data,width,height,sigma){
 }
 
 export async function snapshotLight(canvas){
-  let image=canvas;if(typeof createImageBitmap==='function'){try{image=await createImageBitmap(canvas);}catch{/* Use the already rendered canvas on older implementations. */}}
+  let image=canvas;if(!androidCanvasWorkaround()&&typeof createImageBitmap==='function'){try{image=await createImageBitmap(canvas);}catch{/* Use the already rendered canvas on older implementations. */}}
   // Force deferred blur/raster work to finish while no transport is running.
   // A one-pixel readback avoids copying the full padded lighting surface.
   const warm=document.createElement('canvas');warm.width=warm.height=1;const ctx=warm.getContext('2d',{willReadFrequently:true});ctx.drawImage(image,0,0,1,1);ctx.getImageData(0,0,1,1);return image;
 }
 export class AirLight {
   constructor(canvas,{manual=false}={}){
-    this.canvas=canvas;this.ctx=canvas.getContext('2d',{colorType:'float16'});this.exposure=0;this.color=[.45,.42,.35];this.amount=1.4;
+    this.canvas=canvas;this.ctx=lightContext(canvas,{presentation:!manual});this.exposure=0;this.color=[.45,.42,.35];this.amount=1.4;
     this.reduced=matchMedia('(prefers-reduced-motion: reduce)');this.time=0;this.last=0;
     let seed=2167;const rand=()=>{seed=(1664525*seed+1013904223)>>>0;return seed/4294967296;};
     this.motes=Array.from({length:16},()=>({u:rand(),v:rand(),phase:rand()*Math.PI*2,speed:.004+rand()*.010,size:.45+rand()*1.15,depth:rand()}));
@@ -89,7 +91,7 @@ export class AirLight {
   }
   makeBeam(layout,color){
     const c=document.createElement('canvas');c.width=Math.ceil(layout.w*.5);c.height=Math.ceil(layout.h*.5);
-    const ctx=c.getContext('2d',{colorType:'float16'});ctx.scale(.5,.5);
+    const ctx=lightContext(c);ctx.scale(.5,.5);
     const source=layout.lens,section=y=>this.section.call(layout,y),top=section(0).wallY;
     const rgb=color.map((v,i)=>Math.round(155+Math.min(1,v)*75+(i===0?10:0))).join(',');
     // Overlapping soft cross sections have no hard triangular cone boundary.
@@ -120,9 +122,12 @@ export class AirLight {
     if(this.batchDepth){this.drawPending=true;return;}
     const ctx=this.ctx;if(!this.w)return;
     ctx.setTransform(this.scale,0,0,this.scale,0,0);ctx.clearRect(0,0,this.w,this.h);
+    this.drawTo(ctx);this.onDraw?.();
+  }
+  drawTo(ctx){
     const intensity=Math.min(1.5,this.exposure)*this.amount;
     this.canvas.dataset.exposure=intensity.toFixed(3);this.canvas.dataset.moving=String(this.shouldAnimate());
-    if(intensity<=0){this.canvas.dataset.dust='0';this.onDraw?.();return;}
+    if(intensity<=0){this.canvas.dataset.dust='0';return;}
     ctx.save();ctx.globalCompositeOperation='screen';ctx.globalAlpha=Math.min(1,this.exposure);
     const f=this.optics,dx=f?(f.shift-f.clipRight*.5)*this.sw:0,widthFactor=f?Math.max(.05,1-f.clipRight):1;
     const top=this.section(0).wallY,source=this.lens;let visible=0;
@@ -144,6 +149,6 @@ export class AirLight {
       gradient.addColorStop(0,`rgba(255,239,203,${alpha})`);gradient.addColorStop(.3,`rgba(233,225,205,${alpha*.5})`);gradient.addColorStop(1,'rgba(233,225,205,0)');
       ctx.fillStyle=gradient;ctx.fillRect(x-radius*2.5,y-radius*2.5,radius*5,radius*5);
     }
-    ctx.restore();this.canvas.dataset.dust=String(visible);this.onDraw?.();
+    ctx.restore();this.canvas.dataset.dust=String(visible);
   }
 }
