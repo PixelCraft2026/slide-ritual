@@ -19,7 +19,7 @@ const input={width:1,height:1,data:new Float32Array([.25,.5,3,1]),colorSpace:'sr
 
 test('Android wall uses the previous 48px encoded source instead of the new irradiance grid',()=>withPlatform('Android 16; Xiaomi 15',()=>{
   const wall=new WallLight(document.createElement('canvas')),sample=wall.sampleSource(input);
-  assert.equal(wall.legacy,true);assert.equal(sample.source.width,48);assert.equal(sample.source.height,48);
+  assert.equal(wall.legacy,true);assert.equal(wall.amount,1);assert.equal(sample.source.width,48);assert.equal(sample.source.height,48);
   assert.deepEqual(Array.from(sample.source.image.data.slice(0,4)),[136,186,212,255]);
   assert.ok(sample.color.every(v=>Number.isFinite(v)&&v>0&&v<=1));
 }));
@@ -36,5 +36,5 @@ test('Android prepares bounded byte caches once and reuses them during transport
 
 test('Windows and Apple keep their current linear irradiance samples',async()=>{for(const userAgent of ['Windows NT 10.0','iPad; CPU OS 26_0','Macintosh; Intel Mac OS X'])await withPlatform(userAgent,()=>{
   const wall=new WallLight(document.createElement('canvas')),sample=wall.sampleSource(input);
-  assert.equal(wall.legacy,false);assert.equal(sample.source.size,16);assert.ok(sample.source.data instanceof Float32Array);
+  assert.equal(wall.legacy,false);assert.equal(wall.amount,2);assert.equal(sample.source.size,16);assert.ok(sample.source.data instanceof Float32Array);
 });});

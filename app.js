@@ -10,6 +10,7 @@ import { MachineLight } from './machine-light.js';
 import { NativeProjection } from './native-projection.js';
 import { decodeGainMapTransition } from './gain-map.js';
 import { photoMotion } from './photo-motion.js';
+import { createWallDiffusionPreference } from './wall-diffusion.js';
 import { LiveEnvironmentGamma } from './environment-gamma.js';
 import { createI18n } from './i18n.js';
 import { CHANGE_MS, STARTUP_CHANGE_MS, APERTURE_HOLD_MS, motionRadius, projectionOptics, transitionAt, startupAt, projectionLayout } from './transition.js';
@@ -35,6 +36,9 @@ const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-5
 const cache=new Map(),slideLoads=new WeakMap(),hdrQuery=matchMedia('(dynamic-range: high)'),reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let renderer=new ProjectionRenderer($('projection'),message=>toast(message),{photo:true}),autoTimer,toastTimer,hideTimer,transitionFrame,finishTransition;
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
+const diffusionPreference=createWallDiffusionPreference(wall.legacy);
+$('diffusion').defaultValue=String(diffusionPreference.defaultAmount);$('diffusion').value=String(diffusionPreference.amount);
+wall.amount=diffusionPreference.amount;$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;
 const machineLight=new MachineLight($('machineGlow'));
 let environmentGamma;
 let exposure=0;
@@ -423,6 +427,7 @@ $('zoom').addEventListener('input',()=>{$('zoomValue').textContent=`${Math.round
 $('hdrEntryEV').addEventListener('input',()=>{const ev=Number($('hdrEntryEV').value);$('hdrEntryEVValue').textContent=`+${ev.toFixed(1)} EV`;nativeProjection.setExposureEV(ev);});
 $('depth').addEventListener('input',()=>{const value=$('depth').value;room.style.setProperty('--foreground-blur',`${value}px`);$('depthValue').textContent=Number(value).toFixed(1);machineLight.resize(room.clientWidth,room.clientHeight,scene,Number(value));});
 $('diffusion').addEventListener('input',()=>{wall.amount=Number($('diffusion').value);$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;light(exposure);});
+$('diffusion').addEventListener('change',()=>diffusionPreference.save($('diffusion').value));
 $('environmentGamma').addEventListener('input',()=>{
   const gamma=Number($('environmentGamma').value);$('environmentGammaValue').textContent=gamma.toFixed(2);
   environmentGamma.set(gamma);
@@ -449,6 +454,7 @@ $('fanVolume').addEventListener('input',()=>{const v=Number($('fanVolume').value
 $('interval').addEventListener('input',()=>{$('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});scheduleAuto();});
 $('interval').addEventListener('change',scheduleAuto);$('displayMode').addEventListener('change',()=>{state.displayMode=$('displayMode').value;displayStatus();});hdrQuery.addEventListener('change',displayStatus);
 function refreshLanguage(){
+  const label=t(wall.legacy?'墙面散射（旧版）':'墙面散射');$('diffusionLabel').textContent=label;$('diffusion').setAttribute('aria-label',label);
   updateUI();
   $('rangeBadge').querySelector('span').textContent=t(hdrQuery.matches&&state.nativeHDR&&state.displayMode==='auto'?'HDR · 原生预览':hdrQuery.matches&&state.displayMode==='auto'&&renderer.hdrSupported?'HDR · 已开启':'SDR · 已开启');
   const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;

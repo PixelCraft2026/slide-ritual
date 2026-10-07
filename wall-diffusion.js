@@ -77,3 +77,13 @@ export function legacyWallBuffer(source,layout){
   }
   ctx.globalAlpha=1;return canvas;
 }
+
+// The legacy image-lobe gain and linear diffuse-field gain have different
+// reference brightness. Keep their user adjustments in separate preferences.
+export function createWallDiffusionPreference(legacy,storage){
+  const defaultAmount=legacy?1:2,key='slide-ritual-wall-diffusion-'+(legacy?'legacy':'linear');
+  const valid=value=>value!==null&&value!==undefined&&String(value).trim()!==''&&Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=6;
+  let amount=defaultAmount;
+  try{storage??=globalThis.localStorage;const saved=storage?.getItem(key);if(valid(saved))amount=Number(saved);}catch{}
+  return{defaultAmount,amount,save(value){if(!valid(value))return;try{storage?.setItem(key,String(Number(value)));}catch{}}};
+}

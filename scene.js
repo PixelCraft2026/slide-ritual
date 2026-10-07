@@ -451,7 +451,7 @@ export class ProjectorScene {
 // Broad, spatially varying diffuse return from the actual image. It is rebuilt
 // only on image/viewport changes; the shutter modulates this preblurred light.
 export class WallLight {
-  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.legacy=androidCanvasWorkaround();this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
+  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.legacy=androidCanvasWorkaround();this.amount=this.legacy?1:2;this.exposure=0;this.color=[.45,.42,.35];}
   sampleSource(source){
     if(this.legacy)return legacyWallSamples(source);
     const sample=wallSamples(source);return{source:sample,color:sample.color};

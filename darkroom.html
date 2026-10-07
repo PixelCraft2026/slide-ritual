@@ -95,7 +95,7 @@ button{padding:0}.folder-button span{white-space:nowrap}
       <label class="setting"><span>环境 Gamma <output id="environmentGammaValue">1.00</output></span><input id="environmentGamma" aria-label="环境 Gamma" type="range" min="0.5" max="2" step="0.05" value="1"></label>
       <small class="help">仅影响环境，不改变照片。1.00 为原始明暗。</small>
       <label class="setting"><span>HDR 入场曝光 <output id="hdrEntryEVValue">+1.0 EV</output></span><input id="hdrEntryEV" aria-label="HDR 入场曝光" type="range" min="0" max="2" step="0.1" value="1"></label>
-      <label class="setting"><span>墙面散射 <output id="diffusionValue">200%</output></span><input id="diffusion" type="range" min="0" max="6" step="0.01" value="2"></label>
+      <label class="setting"><span><span id="diffusionLabel">墙面散射</span> <output id="diffusionValue">200%</output></span><input id="diffusion" type="range" min="0" max="6" step="0.01" value="2"></label>
       <label class="setting"><span>空气散射 <output id="airAmountValue">140%</output></span><input id="airAmount" aria-label="空气散射" type="range" min="0" max="5" step="0.05" value="1.4"></label>
       <label class="setting"><span>泛光强度 <output id="bloomValue">30%</output></span><input id="bloom" aria-label="泛光强度" type="range" min="0" max="1" step="0.05" value="0.3"></label>
       <label class="setting"><span>顶盖反射 <output id="topReflectanceValue">70%</output></span><input id="topReflectance" aria-label="顶盖反射" type="range" min="0" max="1" step="0.05" value="0.7"></label>
@@ -583,10 +583,10 @@ function lightCanvasOptions({presentation=false,software=false,...options}={}){
 function lightContext(canvas,options){return canvas.getContext('2d',lightCanvasOptions(options));}
 
 // Fullscreen can reallocate Android's compositor surface. Keep all custom GPU
-// presentation on a standard native format, even on HDR-capable devices. This
-// controls presentation only: floating textures/linear-light filtering remain.
-function canvasPresentation(gpu=globalThis.navigator?.gpu,nav=globalThis.navigator){
-  if(androidCanvasWorkaround(nav))return {format:gpu?.getPreferredCanvasFormat?.()==='bgra8unorm'?'bgra8unorm':'rgba8unorm',colorSpace:'srgb',floating:false};
+// environment presentation on a standard native format. Photos can retain HDR.
+// Floating photo output is separate from the byte lighting compatibility path.
+function canvasPresentation(gpu=globalThis.navigator?.gpu,nav=globalThis.navigator,{photo=false}={}){
+  if(androidCanvasWorkaround(nav)&&!photo)return {format:gpu?.getPreferredCanvasFormat?.()==='bgra8unorm'?'bgra8unorm':'rgba8unorm',colorSpace:'srgb',floating:false};
   return {format:'rgba16float',colorSpace:'display-p3',floating:true};
 }
 
@@ -812,7 +812,7 @@ async function decodeImage(image,viewport) {
 class ProjectionRenderer {
   constructor(canvas,onFailure,{transparent=false,photo=false}={}){this.canvas=canvas;this.onFailure=onFailure;this.transparent=transparent;this.photo=photo;this.alpha=transparent||photo;this.mode='none';this.hdr=false;this.hdrSupported=false;this.source=null;this.params={brightness:1,focus:0,texture:.22,highlight:2,motion:0,boost:1,opacity:1};}
   async init({sdrOnly=false}={}){
-    this.presentation=canvasPresentation();
+    this.presentation=canvasPresentation(undefined,undefined,{photo:this.photo&&!sdrOnly});
     const android=androidCanvasWorkaround();
     if(navigator.gpu&&!sdrOnly){
       try{
@@ -1150,6 +1150,16 @@ function legacyWallBuffer(source,layout){
     ctx.globalAlpha=opacity;ctx.drawImage(layer,0,0);
   }
   ctx.globalAlpha=1;return canvas;
+}
+
+// The legacy image-lobe gain and linear diffuse-field gain have different
+// reference brightness. Keep their user adjustments in separate preferences.
+function createWallDiffusionPreference(legacy,storage){
+  const defaultAmount=legacy?1:2,key='slide-ritual-wall-diffusion-'+(legacy?'legacy':'linear');
+  const valid=value=>value!==null&&value!==undefined&&String(value).trim()!==''&&Number.isFinite(Number(value))&&Number(value)>=0&&Number(value)<=6;
+  let amount=defaultAmount;
+  try{storage??=globalThis.localStorage;const saved=storage?.getItem(key);if(valid(saved))amount=Number(saved);}catch{}
+  return{defaultAmount,amount,save(value){if(!valid(value))return;try{storage?.setItem(key,String(Number(value)));}catch{}}};
 }
 
 
@@ -1605,7 +1615,7 @@ class ProjectorScene {
 // Broad, spatially varying diffuse return from the actual image. It is rebuilt
 // only on image/viewport changes; the shutter modulates this preblurred light.
 class WallLight {
-  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.legacy=androidCanvasWorkaround();this.amount=2;this.exposure=0;this.color=[.45,.42,.35];}
+  constructor(canvas,{presentation=true}={}){this.canvas=canvas;this.ctx=lightContext(canvas,{presentation,software:presentation});this.legacy=androidCanvasWorkaround();this.amount=this.legacy?1:2;this.exposure=0;this.color=[.45,.42,.35];}
   sampleSource(source){
     if(this.legacy)return legacyWallSamples(source);
     const sample=wallSamples(source);return{source:sample,color:sample.color};
@@ -2208,7 +2218,7 @@ const english={
   '选一个文件夹，':'Choose a folder,','让照片慢慢放映。':'let your photos unfold.',
   '先看示例 →':'Try the demo →','先看示例':'Try the demo','重新开机 →':'Restart projector →','移动鼠标，唤回控制':'Move the pointer to show controls',
   '关闭设置':'Close settings','画面大小':'Image size','灯光亮度':'Lamp brightness','镜头对焦':'Lens focus','前景虚焦':'Foreground blur',
-  '清晰':'Sharp','光照设置':'Lighting','HDR 入场曝光':'HDR entry exposure','墙面散射':'Wall diffusion','空气散射':'Air scattering','泛光强度':'Bloom intensity',
+  '清晰':'Sharp','光照设置':'Lighting','HDR 入场曝光':'HDR entry exposure','墙面散射（旧版）':'Wall diffusion (legacy)','墙面散射':'Wall diffusion','空气散射':'Air scattering','泛光强度':'Bloom intensity',
   '顶盖反射':'Top cover reflection','机箱光源':'Housing lights','幻灯机位置':'Projector position','垂直位置':'Vertical position','俯仰角度':'Pitch angle',
   '幻灯机垂直位置':'Projector vertical position','幻灯机俯仰角度':'Projector pitch angle','位置复位':'Reset position',
   '幻灯片位置':'Slide position','幻灯片垂直位置':'Slide vertical position','幻灯片位置复位':'Reset slide position',
@@ -2261,7 +2271,7 @@ function translate(key,language,params={}){
 function createI18n({document=globalThis.document,navigator=globalThis.navigator,storage,window=globalThis.window}={}){
   let preference='auto';try{storage??=globalThis.localStorage;const saved=storage?.getItem('slide-ritual-language');if(['auto','en','zh-CN'].includes(saved))preference=saved;}catch{}
   let language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
-  const bindings=[],listeners=new Set(),dynamic='output,#photoName,#photoMeta,#machineState,#trayLabel,#startBtn,#rangeBadge';
+  const bindings=[],listeners=new Set(),dynamic='output,#photoName,#photoMeta,#machineState,#trayLabel,#startBtn,#rangeBadge,#diffusionLabel';
   const walker=document.createTreeWalker(document.documentElement,4);let node;
   while((node=walker.nextNode())){
     const key=node.nodeValue.trim();if(english[key]&&!node.parentElement?.closest(dynamic))bindings.push({node,key,prefix:node.nodeValue.match(/^\s*/)[0],suffix:node.nodeValue.match(/\s*$/)[0]});
@@ -2301,6 +2311,7 @@ function createI18n({document=globalThis.document,navigator=globalThis.navigator
 
 
 
+
 const $=id=>document.getElementById(id);
 const i18n=createI18n(),t=i18n.t;
 const room=$('room'),screen=$('screen'),audio=new ProjectorAudio();
@@ -2322,6 +2333,9 @@ const powerIcon='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9m-5
 const cache=new Map(),slideLoads=new WeakMap(),hdrQuery=matchMedia('(dynamic-range: high)'),reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
 let renderer=new ProjectionRenderer($('projection'),message=>toast(message),{photo:true}),autoTimer,toastTimer,hideTimer,transitionFrame,finishTransition;
 const wall=new WallLight($('wallLight')),air=new AirLight($('airLight'));let scene;
+const diffusionPreference=createWallDiffusionPreference(wall.legacy);
+$('diffusion').defaultValue=String(diffusionPreference.defaultAmount);$('diffusion').value=String(diffusionPreference.amount);
+wall.amount=diffusionPreference.amount;$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;
 const machineLight=new MachineLight($('machineGlow'));
 let environmentGamma;
 let exposure=0;
@@ -2710,6 +2724,7 @@ $('zoom').addEventListener('input',()=>{$('zoomValue').textContent=`${Math.round
 $('hdrEntryEV').addEventListener('input',()=>{const ev=Number($('hdrEntryEV').value);$('hdrEntryEVValue').textContent=`+${ev.toFixed(1)} EV`;nativeProjection.setExposureEV(ev);});
 $('depth').addEventListener('input',()=>{const value=$('depth').value;room.style.setProperty('--foreground-blur',`${value}px`);$('depthValue').textContent=Number(value).toFixed(1);machineLight.resize(room.clientWidth,room.clientHeight,scene,Number(value));});
 $('diffusion').addEventListener('input',()=>{wall.amount=Number($('diffusion').value);$('diffusionValue').textContent=`${Math.round(wall.amount*100)}%`;light(exposure);});
+$('diffusion').addEventListener('change',()=>diffusionPreference.save($('diffusion').value));
 $('environmentGamma').addEventListener('input',()=>{
   const gamma=Number($('environmentGamma').value);$('environmentGammaValue').textContent=gamma.toFixed(2);
   environmentGamma.set(gamma);
@@ -2736,6 +2751,7 @@ $('fanVolume').addEventListener('input',()=>{const v=Number($('fanVolume').value
 $('interval').addEventListener('input',()=>{$('intervalValue').textContent=t('{value} 秒',{value:Number($('interval').value)});scheduleAuto();});
 $('interval').addEventListener('change',scheduleAuto);$('displayMode').addEventListener('change',()=>{state.displayMode=$('displayMode').value;displayStatus();});hdrQuery.addEventListener('change',displayStatus);
 function refreshLanguage(){
+  const label=t(wall.legacy?'墙面散射（旧版）':'墙面散射');$('diffusionLabel').textContent=label;$('diffusion').setAttribute('aria-label',label);
   updateUI();
   $('rangeBadge').querySelector('span').textContent=t(hdrQuery.matches&&state.nativeHDR&&state.displayMode==='auto'?'HDR · 原生预览':hdrQuery.matches&&state.displayMode==='auto'&&renderer.hdrSupported?'HDR · 已开启':'SDR · 已开启');
   const high=hdrQuery.matches,enabled=high&&state.displayMode==='auto'&&renderer.hdrSupported;

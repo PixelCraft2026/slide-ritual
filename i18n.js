@@ -34,7 +34,7 @@ export const english={
   '选一个文件夹，':'Choose a folder,','让照片慢慢放映。':'let your photos unfold.',
   '先看示例 →':'Try the demo →','先看示例':'Try the demo','重新开机 →':'Restart projector →','移动鼠标，唤回控制':'Move the pointer to show controls',
   '关闭设置':'Close settings','画面大小':'Image size','灯光亮度':'Lamp brightness','镜头对焦':'Lens focus','前景虚焦':'Foreground blur',
-  '清晰':'Sharp','光照设置':'Lighting','HDR 入场曝光':'HDR entry exposure','墙面散射':'Wall diffusion','空气散射':'Air scattering','泛光强度':'Bloom intensity',
+  '清晰':'Sharp','光照设置':'Lighting','HDR 入场曝光':'HDR entry exposure','墙面散射（旧版）':'Wall diffusion (legacy)','墙面散射':'Wall diffusion','空气散射':'Air scattering','泛光强度':'Bloom intensity',
   '顶盖反射':'Top cover reflection','机箱光源':'Housing lights','幻灯机位置':'Projector position','垂直位置':'Vertical position','俯仰角度':'Pitch angle',
   '幻灯机垂直位置':'Projector vertical position','幻灯机俯仰角度':'Projector pitch angle','位置复位':'Reset position',
   '幻灯片位置':'Slide position','幻灯片垂直位置':'Slide vertical position','幻灯片位置复位':'Reset slide position',
@@ -87,7 +87,7 @@ export function translate(key,language,params={}){
 export function createI18n({document=globalThis.document,navigator=globalThis.navigator,storage,window=globalThis.window}={}){
   let preference='auto';try{storage??=globalThis.localStorage;const saved=storage?.getItem('slide-ritual-language');if(['auto','en','zh-CN'].includes(saved))preference=saved;}catch{}
   let language=resolveLanguage(preference,navigator?.languages?.length?navigator.languages:[navigator?.language||'en']);
-  const bindings=[],listeners=new Set(),dynamic='output,#photoName,#photoMeta,#machineState,#trayLabel,#startBtn,#rangeBadge';
+  const bindings=[],listeners=new Set(),dynamic='output,#photoName,#photoMeta,#machineState,#trayLabel,#startBtn,#rangeBadge,#diffusionLabel';
   const walker=document.createTreeWalker(document.documentElement,4);let node;
   while((node=walker.nextNode())){
     const key=node.nodeValue.trim();if(english[key]&&!node.parentElement?.closest(dynamic))bindings.push({node,key,prefix:node.nodeValue.match(/^\s*/)[0],suffix:node.nodeValue.match(/\s*$/)[0]});
