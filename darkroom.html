@@ -813,7 +813,11 @@ class ProjectionRenderer {
   constructor(canvas,onFailure,{transparent=false,photo=false}={}){this.canvas=canvas;this.onFailure=onFailure;this.transparent=transparent;this.photo=photo;this.alpha=transparent||photo;this.mode='none';this.hdr=false;this.hdrSupported=false;this.source=null;this.params={brightness:1,focus:0,texture:.22,highlight:2,motion:0,boost:1,opacity:1};}
   async init({sdrOnly=false}={}){
     this.presentation=canvasPresentation();
-    if(navigator.gpu&&!sdrOnly){
+    // Android fullscreen corruption persists with native byte WebGPU surfaces.
+    // Use the established WebGL renderer for live photos and room glow; export
+    // already requests its SDR WebGL path. Keep native fullscreen available.
+    const android=androidCanvasWorkaround();
+    if(navigator.gpu&&!sdrOnly&&!android){
       try{
         const adapter=await navigator.gpu.requestAdapter();
         if(!adapter)throw new Error('No adapter');
@@ -842,7 +846,7 @@ class ProjectionRenderer {
     const gl=this.gl=this.canvas.getContext('webgl2',{alpha:this.alpha,antialias:false,preserveDrawingBuffer:true});
     if(!gl){this.mode='native';return;}
     const compile=(type,src)=>{const s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
-    this.program=gl.createProgram();gl.attachShader(this.program,compile(gl.VERTEX_SHADER,vertexGL));gl.attachShader(this.program,compile(gl.FRAGMENT_SHADER,fragmentGL));gl.linkProgram(this.program);
+    this.program=gl.createProgram();gl.attachShader(this.program,compile(gl.VERTEX_SHADER,vertexGL));gl.attachShader(this.program,compile(gl.FRAGMENT_SHADER,android?fragmentGL.replace('precision highp float;','precision highp float;precision highp sampler2D;'):fragmentGL));gl.linkProgram(this.program);
     if(!gl.getProgramParameter(this.program,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(this.program));
     gl.useProgram(this.program);const v=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
     const loc=gl.getAttribLocation(this.program,'pos');gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);

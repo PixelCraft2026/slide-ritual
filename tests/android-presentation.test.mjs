@@ -4,29 +4,30 @@ import {ProjectionRenderer} from '../renderer.js';
 import {canvasPresentation} from '../canvas-compat.js';
 
 async function initRenderer(nav,{transparent=false,photo=false}={}){
-  const configs=[],pipelines=[],textures=[];
+  const configs=[],pipelines=[],textures=[],shaders=[];let gpuRequests=0;
   const gpuContext={configure(config){configs.push(config);},getConfiguration(){return configs.at(-1);}};
   const device={lost:new Promise(()=>{}),addEventListener(){},createShaderModule(){return{getCompilationInfo:async()=>({messages:[]})};},createRenderPipelineAsync:async descriptor=>{pipelines.push(descriptor);return{getBindGroupLayout(){return{};}};},createBuffer(){return{};},createSampler(){return{};},createTexture(descriptor){textures.push(descriptor);return{createView(){return{};}};},createBindGroup(){return{};},queue:{writeTexture(){}}};
   const original=new Map(['navigator','GPUBufferUsage','GPUTextureUsage','devicePixelRatio'].map(key=>[key,Object.getOwnPropertyDescriptor(globalThis,key)]));
-  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{...nav,gpu:{getPreferredCanvasFormat:()=> 'bgra8unorm',requestAdapter:async()=>({requestDevice:async()=>device})}}});
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{...nav,gpu:{getPreferredCanvasFormat:()=> 'bgra8unorm',requestAdapter:async()=>{gpuRequests++;return{requestDevice:async()=>device};}}}});
   globalThis.GPUBufferUsage={UNIFORM:1,COPY_DST:2};globalThis.GPUTextureUsage={TEXTURE_BINDING:1,COPY_DST:2};globalThis.devicePixelRatio=3;
-  const renderer=new ProjectionRenderer({width:1,height:1,style:{},getContext(type){assert.equal(type,'webgpu');return gpuContext;}},error=>assert.fail(error),{transparent,photo});
+  const gl={createShader:()=>({}),shaderSource(shader,source){shaders.push(source);},compileShader(){},getShaderParameter:()=>true,createProgram:()=>({}),attachShader(){},linkProgram(){},getProgramParameter:()=>true,useProgram(){},createBuffer:()=>({}),bindBuffer(){},bufferData(){},getAttribLocation:()=>0,enableVertexAttribArray(){},vertexAttribPointer(){},getUniformLocation:(program,name)=>name,createTexture:()=>({}),bindTexture(){},texParameteri(){},texImage2D(...args){textures.push(args);}};
+  const renderer=new ProjectionRenderer({width:1,height:1,style:{},addEventListener(){},getContext(type){return type==='webgpu'?gpuContext:gl;}},error=>assert.fail(error),{transparent,photo});
   try{
     await renderer.init();renderer.configure(true);
     for(const [w,h] of [[400,890],[890,400],[400,1040],[400,890]])renderer.resize(w,h,230);
     renderer.configure(false);renderer.configure(true);
     renderer.textureResource({width:1,height:1,data:new Uint16Array(4)});
-    return{renderer,configs,pipelines,textures};
+    return{renderer,configs,pipelines,textures,shaders,gpuRequests};
   }finally{for(const [key,value]of original){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
 }
 
-test('Android photo and room glow never configure float presentation, including HDR requests and fullscreen resizes',async()=>{
-  for(const options of [{photo:true},{transparent:true}]){
-    const {renderer,configs,pipelines,textures}=await initRenderer({userAgent:'Android 16; Xiaomi 15 Chrome/154'},options);
-    assert.equal(renderer.mode,'webgpu');assert.equal(renderer.hdrSupported,false);assert.equal(renderer.hdr,false);
-    for(const config of configs){assert.equal(config.format,'bgra8unorm');assert.equal(config.colorSpace,'srgb');assert.equal(config.toneMapping.mode,'standard');assert.equal(config.alphaMode,'premultiplied');}
-    assert.equal(pipelines[0].fragment.targets[0].format,'bgra8unorm');assert.equal(pipelines[0].fragment.constants.standardOutput,1);
-    assert.equal(textures[0].format,'rgba16float','internal filtering keeps floating precision');
+test('Android live photo and room glow bypass WebGPU devices and swapchains, including fullscreen resizes',async()=>{
+  for(const nav of [{userAgent:'Android 16; Xiaomi 15 Chrome/154'},{userAgent:'Android 16; Xiaomi 15 EdgA/154'},{userAgent:'Linux x86_64',userAgentData:{platform:'Android'}}])for(const options of [{photo:true},{transparent:true}]){
+    const {renderer,configs,pipelines,textures,shaders,gpuRequests}=await initRenderer(nav,options);
+    assert.equal(renderer.mode,'webgl');assert.equal(renderer.hdrSupported,false);assert.equal(renderer.hdr,false);
+    assert.equal(gpuRequests,0);assert.equal(configs.length,0);assert.equal(pipelines.length,0);
+    assert.ok(shaders.some(s=>s.includes('precision highp sampler2D;')));
+    assert.equal(textures[0].length,9,'photo filtering still uploads typed half pixels');
   }
 });
 test('Windows and iPad retain floating P3 HDR presentation',async()=>{
