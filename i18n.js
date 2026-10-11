@@ -7,6 +7,7 @@ export const english={
   '环境 Gamma':'Environment gamma','仅影响环境，不改变照片。1.00 为原始明暗。':'Affects the environment only, leaving photos unchanged. 1.00 preserves the original tones.','当前浏览器无法应用环境 Gamma，已恢复原始明暗':'Environment gamma is unavailable in this browser. Original tones restored.','1.00 为原始明暗；大于 1 提亮中间调，小于 1 压暗。':'1.00 preserves the original tones. Above 1 lifts midtones; below 1 darkens them.',
   '导出视频':'Export video','关闭导出':'Close export','分辨率':'Resolution','帧率':'Frame rate','画面方向':'Orientation',
   '30 fps · 1/60 秒':'30 fps · 1/60 s','60 fps · 1/120 秒':'60 fps · 1/120 s','横屏 · 16:9':'Landscape · 16:9','竖屏 · 9:16':'Portrait · 9:16',
+  '跳过开头白屏':'Skip opening white screen','直接从第一张照片开始，跳过启动白屏与首次装片。':'Start with the first photo, skipping the lamp warmup and first insertion.',
   '包含机械声音与风扇声':'Include mechanical sounds and fan ambience','导出进度':'Export progress','开始导出':'Start export','取消导出':'Cancel export','下载视频':'Download video',
   'SDR · MP4 · 从第一张完整播放一遍。导出时暂停放映，结束后恢复。':'SDR · MP4 · Play every photo once from the beginning. Viewing pauses during export and resumes afterward.',
   '导出完整暗室画面与声音。导出期间暂停放映，结束后恢复。':'Export the complete darkroom and soundtrack. Viewing pauses during export and resumes afterward.',

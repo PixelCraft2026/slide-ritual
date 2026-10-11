@@ -33,7 +33,7 @@ async function soundtrack(host,snapshot,signal){
 export async function exportMovie(host,snapshot,options,{signal,onProgress=()=>{},onMetrics=()=>{}}){
   const {width,height}=exportDimensions(options.resolution,options.orientation),fps=Number(options.fps);
   if(![30,60].includes(fps))throw new Error('Invalid frame rate');
-  const config=await encoderConfig(width,height,fps,options.sound,options.bitrate),timeline=exportTimeline(snapshot.slides.length,snapshot.settings.interval*1000),frames=Math.ceil(timeline.duration*fps/1000);
+  const config=await encoderConfig(width,height,fps,options.sound,options.bitrate),timeline=exportTimeline(snapshot.slides.length,snapshot.settings.interval*1000,{skipIntro:options.skipIntro}),frames=Math.ceil(timeline.duration*fps/1000);
   let renderer,output,fileStream,wakeLock;const chunks=[],memoryLimit=512*1024*1024;
   const metrics={prepare:0,render:0,capture:0,encode:0,audio:0,finalize:0},started=performance.now();let tick=started,lastYield=started,lastProgress=started;
   try{
@@ -94,7 +94,7 @@ export function openVideoExport(host){
   close.onclick=()=>dialog.close();cancel.onclick=()=>controller?.abort();
   form.onsubmit=async e=>{
     e.preventDefault();if(controller)return;
-    const options={resolution:form.elements.resolution.value,orientation:form.elements.orientation.value,fps:Number(form.elements.fps.value),sound:form.elements.sound.checked,bitrate:form.elements.bitrate.value==='custom'?form.elements.customBitrate.value:form.elements.bitrate.value};
+    const options={resolution:form.elements.resolution.value,orientation:form.elements.orientation.value,fps:Number(form.elements.fps.value),sound:form.elements.sound.checked,skipIntro:form.elements.skipIntro.checked,bitrate:form.elements.bitrate.value==='custom'?form.elements.customBitrate.value:form.elements.bitrate.value};
     let paused=false;controller=new AbortController();const signal=controller.signal;running(true);cleanupDownload();progress.value=0;message('正在检查导出能力…');
     try{
       // Call the picker in the submit gesture, before awaiting codec checks.

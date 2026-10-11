@@ -4,15 +4,16 @@ export function exportDimensions(resolution='1080',orientation='landscape'){
   const short=Number(resolution),long=short*16/9;
   return orientation==='portrait'?{width:short,height:long}:{width:long,height:short};
 }
-export function exportTimeline(count,hold=4000,{warmup=550,white=5000,opening=1850,change=1500}={}){
+export function exportTimeline(count,hold=4000,{warmup=550,white=5000,opening=1850,change=1500,skipIntro=false}={}){
   if(!Number.isInteger(count)||count<1||!Number.isFinite(hold)||hold<2000||hold>30000)throw new Error('Invalid slideshow');
-  const segments=[{kind:'warmup',start:0,end:warmup,index:0},{kind:'white',start:warmup,end:warmup+white,index:0},{kind:'opening',start:warmup+white,end:warmup+white+opening,index:0}];
-  let time=warmup+white+opening;
+  const sourceOffset=skipIntro?warmup+white+opening:0;
+  const segments=skipIntro?[]:[{kind:'warmup',start:0,end:warmup,index:0},{kind:'white',start:warmup,end:warmup+white,index:0},{kind:'opening',start:warmup+white,end:warmup+white+opening,index:0}];
+  let time=skipIntro?0:warmup+white+opening;
   for(let index=0;index<count;index++){
     segments.push({kind:'hold',start:time,end:time+hold,index});time+=hold;
     if(index<count-1){segments.push({kind:'change',start:time,end:time+change,index:index+1});time+=change;}
   }
-  return{segments,duration:time,sounds:segments.filter(s=>s.kind==='opening'||s.kind==='change').map(s=>({start:s.start,opening:s.kind==='opening'}))};
+  return{segments,duration:time,sourceOffset,sounds:segments.filter(s=>s.kind==='opening'||s.kind==='change').map(s=>({start:s.start,opening:s.kind==='opening'}))};
 }
 export function timelineAt(timeline,time){
   const t=Math.max(0,Math.min(time,timeline.duration-1e-6)),segment=timeline.segments.find(s=>t<s.end);
@@ -37,10 +38,11 @@ export function mixAudioChunk(buffers,timeline,settings,start,length,sampleRate=
   };
   if(!settings.enabled)return pcm;
   const active=events.filter(e=>e.start/1000<start+length/sampleRate&&e.start/1000+(buffers[e.opening?'advance-startup':'advance']?.duration||0)>start);
+  const sourceStart=start+(timeline.sourceOffset||0)/1000;
   for(let i=0;i<length;i++){
-    const time=start+i/sampleRate,fan=buffers.fan;
+    const time=start+i/sampleRate,sourceTime=sourceStart+i/sampleRate,fan=buffers.fan;
     for(let channel=0;channel<2;channel++){
-      let value=(fan?sample(fan,time%fan.duration,channel)*settings.fanVolume*.55*Math.min(1,time/1.5):0)+sample(buffers.click,time,channel)*settings.volume;
+      let value=(fan?sample(fan,sourceTime%fan.duration,channel)*settings.fanVolume*.55*Math.min(1,sourceTime/1.5):0)+sample(buffers.click,sourceTime,channel)*settings.volume;
       for(const event of active)value+=sample(buffers[event.opening?'advance-startup':'advance'],time-event.start/1000,channel)*settings.volume*(event.opening?.785:.767);
       pcm[i*2+channel]=Math.max(-1,Math.min(1,value));
     }

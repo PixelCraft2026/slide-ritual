@@ -28,6 +28,31 @@ test('one pass includes the white field, first insertion, every full hold, and n
   assert.equal(timelineAt(timeline,22400).index,2);
   assert.equal(timelineAt(timeline,22400).kind,'hold');
 });
+test('skipping the white intro begins with a full first photo and shifts all later changes together',()=>{
+  for(const count of [1,3]){
+    const full=exportTimeline(count,4000),trimmed=exportTimeline(count,4000,{skipIntro:true});
+    assert.equal(trimmed.sourceOffset,7400);
+    assert.equal(trimmed.duration,full.duration-7400);
+    assert.deepEqual(trimmed.segments,full.segments.filter(s=>s.kind==='hold'||s.kind==='change').map(s=>({...s,start:s.start-7400,end:s.end-7400})));
+    assert.deepEqual(trimmed.sounds,full.sounds.filter(s=>!s.opening).map(s=>({...s,start:s.start-7400})));
+    assert.deepEqual(timelineAt(trimmed,0),{kind:'hold',start:0,end:4000,index:0,local:0});
+    assert.equal(timelineAt(trimmed,trimmed.duration).index,count-1);
+    for(const fps of [30,60])assert.equal(Math.ceil(full.duration*fps/1000)-Math.ceil(trimmed.duration*fps/1000),7400*fps/1000);
+  }
+});
+test('trimmed audio keeps fan phase and transport sync without replaying startup sounds',()=>{
+  const makeBuffer=(duration,value)=>{
+    const data=Float32Array.from({length:Math.round(duration*48000)},(_,i)=>value*Math.sin(i*.01));
+    return{sampleRate:48000,length:data.length,duration,numberOfChannels:1,getChannelData:()=>data};
+  };
+  const buffers={fan:makeBuffer(.13,.2),click:makeBuffer(.08,.4),advance:makeBuffer(.5,.3),'advance-startup':makeBuffer(1,.4)};
+  const settings={enabled:true,volume:.55,fanVolume:.18},full=exportTimeline(3,4000),trimmed=exportTimeline(3,4000,{skipIntro:true});
+  for(const time of [0,3.99,4,4.25,9.5,9.75,14.95]){
+    const actual=mixAudioChunk(buffers,trimmed,settings,time,1024),expected=mixAudioChunk(buffers,full,settings,time+7.4,1024);
+    for(let i=0;i<actual.length;i++)assert.ok(Math.abs(actual[i]-expected[i])<1e-7,`audio mismatch at ${time}s sample ${i}`);
+  }
+  assert.deepEqual([...mixAudioChunk({click:buffers.click,'advance-startup':buffers['advance-startup']},trimmed,settings,0,1024)],Array(2048).fill(0));
+});
 test('180 degree shutter samples are centered, normalized, and contained in the video',()=>{
   for(const fps of [30,60]){
     const times=shutterSamples(10,fps,1000,8),center=10.5*1000/fps;

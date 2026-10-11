@@ -40,6 +40,8 @@ Live photo motion uses the same linear-light trajectory gathering method as vide
 
 Choose **Export video** in the control rail. The video includes the opening white field and every loaded photo once, with your current hold time and picture settings. Viewing and sound pause during export and resume afterward, including on cancellation or failure. A manually paused slideshow stays paused.
 
+Enable **Skip opening white screen** to begin directly with the first photo. This removes the lamp warmup and first insertion (7.4 seconds), while preserving every full photo hold and later slide changes with synchronized sound. The option is off by default.
+
 The 180-degree shutter covers 1/60 s at 30 fps and 1/120 s at 60 fps. Photos use dense linear-light gathers along the known transport path; the mechanism uses projected per-object velocity and depth. This avoids coarse averages of multiple full scenes and does not estimate optical flow from images. Holds cache the static layers around the animated dust; native canvas video frames avoid synchronous RGBA readbacks. Export requires WebGL 2 and native WebCodecs H.264 / AAC encoding. Support and speed depend on the device. Native direct saving is preferred; the fallback download path has a 512 MiB limit.
 
 Select a video bitrate preset or enter 2–200 Mbps. Auto uses 24 / 36 Mbps for 1080P at 30 / 60 fps, and 72 / 108 Mbps for 4K. This is a variable bitrate target: static dark scenes may encode below it. The exact resolution, frame rate and requested bitrate are checked on the device before export.

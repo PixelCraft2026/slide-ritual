@@ -86,6 +86,8 @@
     <label class="setting select-setting"><span>视频码率</span><select name="bitrate"><option value="auto">自动 · 高画质</option><option value="2">2 Mbps</option><option value="5">5 Mbps</option><option value="12">12 Mbps</option><option value="24">24 Mbps</option><option value="36">36 Mbps</option><option value="50">50 Mbps</option><option value="72">72 Mbps</option><option value="108">108 Mbps</option><option value="160">160 Mbps</option><option value="custom">自定义</option></select></label>
     <label class="setting select-setting" id="exportCustomBitrate" hidden><span>自定义 Mbps</span><input name="customBitrate" aria-label="自定义视频码率 Mbps" type="number" min="2" max="200" step="1" value="50"></label>
     <small id="exportBitrateHint" class="help"></small>
+    <label class="check-setting"><input name="skipIntro" type="checkbox"><span>跳过开头白屏</span></label>
+    <small class="help">直接从第一张照片开始，跳过启动白屏与首次装片。</small>
     <label class="check-setting"><input name="sound" type="checkbox" checked><span>包含机械声音与风扇声</span></label>
     <p class="help">SDR · MP4 · 从第一张完整播放一遍。导出时暂停放映，结束后恢复。</p>
     <progress id="exportProgress" max="1" value="0" aria-label="导出进度"></progress>

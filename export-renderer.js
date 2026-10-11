@@ -111,14 +111,15 @@ export class ExportRenderer{
     else if(segment.kind==='change'){frame=this.host.transitionAt(segment.local);item=this.cache.get(frame.swap?segment.index:segment.index-1);}
     else item=this.cache.get(segment.index);
     this.activate(item);const {layout}=item,optics=this.host.projectionOptics(frame,layout.aperture,layout.sw),emitted=frame.exposure*s.brightness;
-    if(this.standard){this.wall.exposure=emitted;this.wall.optics=optics;}else this.wall.draw(emitted,optics);this.air.time=time/1000;this.air.exposure=emitted;this.air.color=this.wall.color;this.air.optics=optics;this.air.draw();
+    if(this.standard){this.wall.exposure=emitted;this.wall.optics=optics;}else this.wall.draw(emitted,optics);this.air.time=(time+(timeline.sourceOffset||0))/1000;this.air.exposure=emitted;this.air.color=this.wall.color;this.air.optics=optics;this.air.draw();
     const cycle=segment.kind==='opening'||segment.kind==='change';
     const sceneKey=[emitted,frame.adaptation||1,...this.wall.color].join(',');
     if(cycle||this.cycleStart!=null||this.stillSceneKey!==sceneKey){
       this.scene.beginFrame();this.scene.illuminate(1,emitted,this.wall.color,(frame.adaptation||1)*s.brightness);
       if(cycle){if(this.cycleStart!==segment.start){this.scene.reset();this.cycleStart=segment.start;}this.scene.mechanism(segment.kind==='opening'?frame.mechanicalMs:segment.local);this.stillSceneKey=null;}
       else{
-        if(this.cycleStart!=null){this.scene.mechanism(1500);this.scene.reset();this.cycleStart=null;}
+        // A trimmed export starts with the first slide already inserted.
+        if(this.cycleStart!=null||timeline.sourceOffset>0&&this.stillSceneKey===undefined){this.scene.mechanism(1500);this.scene.reset();this.cycleStart=null;}
         this.stillSceneKey=sceneKey;
       }
       this.scene.endFrame();
