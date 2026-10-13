@@ -151,11 +151,14 @@ async function loadSlide(slide){
     const download=nextDownload?.slide===slide&&nextDownload.url===slide.url?nextDownload:null;
     const image=(download?await download.pending:null)||await loadImage(slide.url);
     if(nextDownload===download)nextDownload=null;
-    const exposureSource=slide.hdrCandidate&&nativeProjection.exposureRenderer&&hdrQuery.matches&&state.displayMode==='auto'?await decodeGainMapTransition(slide.file,image,viewport):null;
+    const exposureSource=slide.hdrCandidate&&nativeProjection.exposureRenderer?await decodeGainMapTransition(slide.file,image,viewport,{compatibilityOnly:!hdrQuery.matches||state.displayMode!=='auto'}):null;
     const source=exposureSource||await decodeImage(image,viewport);
     if(source.hdr){slide.type='HDR';slide.hdrCandidate=true;}
     // Preserve the native gain map if float readback flattened it. Never manufacture its lost highlights.
-    result={source,image,native:renderer.mode==='native'||Boolean(exposureSource)||(slide.hdrCandidate&&!source.hdr)};
+    // Reconstruct affected phone gain maps once and keep them on the existing
+    // float HDR canvas. Native HDR image layers can show a seam in fullscreen,
+    // even after their MPF/EXIF fields are repaired. Camera JPEGs stay native.
+    result={source,image,native:renderer.mode==='native'||Boolean(exposureSource&&!source.preferCanvasHDR)||(slide.hdrCandidate&&!source.hdr)};
     if(exposureSource)result.exposureSource=exposureSource;
   }
   // Finish background filtering before the mechanical cycle starts.

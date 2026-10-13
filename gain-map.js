@@ -11,6 +11,30 @@ function jpegHeaders(bytes,start=0){
   }
   return null;
 }
+// Scan JPEG markers, including stuffed entropy bytes and restart markers.
+// An EXIF thumbnail may contain its own EOI; a raw byte search would truncate
+// the primary photograph. Recovery is bounded by the verified gain-map start.
+function jpegEnd(bytes,start,limit){
+  if(bytes[start]!==255||bytes[start+1]!==216)return null;
+  let p=start+2;
+  while(p<limit){
+    if(bytes[p++]!==255)return null;while(p<limit&&bytes[p]===255)p++;
+    if(p>=limit)return null;const marker=bytes[p++];
+    if(marker===217)return p;
+    if(marker===1||marker>=208&&marker<=215)continue;
+    if(p+2>limit)return null;const length=(bytes[p]<<8)|bytes[p+1];
+    if(length<2||p+length>limit)return null;p+=length;
+    if(marker===218){
+      while(p<limit){
+        if(bytes[p++]!==255)continue;const prefix=p-1;while(p<limit&&bytes[p]===255)p++;
+        if(p>=limit)return null;const next=bytes[p];
+        if(next===0||next>=208&&next<=215){p++;continue;}
+        p=prefix;break;
+      }
+    }
+  }
+  return null;
+}
 function mpfImages(bytes,segment){
   const start=segment.data+4,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length),little=bytes[start]===73&&bytes[start+1]===73;
   if(!little&&!(bytes[start]===77&&bytes[start+1]===77))return null;
@@ -52,10 +76,25 @@ function profileSpace(bytes,headers){
   return null;
 }
 function orientation(bytes,headers){
-  const exif=headers.find(s=>s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.data+6))==='Exif\0\0');if(!exif)return 1;
-  try{const start=exif.data+6,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length),little=bytes[start]===73,ifd=start+view.getUint32(start+4,little),count=view.getUint16(ifd,little);if(count>256||ifd+2+count*12>exif.end)return 0;
-    for(let i=0;i<count;i++){const p=ifd+2+i*12;if(view.getUint16(p,little)===274)return view.getUint16(p+8,little);}return 1;
-  }catch{return 0;}
+  const exif=headers.find(s=>s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.data+6))==='Exif\0\0');if(!exif)return{value:1};
+  try{
+    const start=exif.data+6,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.length),little=bytes[start]===73&&bytes[start+1]===73;
+    if(start+8>exif.end||!little&&!(bytes[start]===77&&bytes[start+1]===77)||view.getUint16(start+2,little)!==42)return null;
+    const ifd=start+view.getUint32(start+4,little);if(ifd<start+8||ifd+2>exif.end)return null;
+    const count=view.getUint16(ifd,little);if(count>256||ifd+2+count*12>exif.end)return null;
+    for(let i=0;i<count;i++){
+      const p=ifd+2+i*12;if(view.getUint16(p,little)!==274)continue;
+      const type=view.getUint16(p+2,little);if((type!==3&&type!==4)||view.getUint32(p+4,little)!==1)return null;
+      const value=type===3?view.getUint16(p+8,little):view.getUint32(p+8,little);if(value>8)return null;
+      if(value!==0&&type===3)return{value};
+      // Some phone Motion Photos store LONG/0 instead of SHORT/1. Normalize
+      // only the temporary base decode; the original file remains untouched.
+      const replacement=new Uint8Array(bytes.subarray(exif.start,exif.end)),copy=new DataView(replacement.buffer),at=p-exif.start;
+      copy.setUint16(at+2,3,little);copy.setUint16(at+8,value||1,little);copy.setUint16(at+10,0,little);
+      return{value:value||1,segment:{...exif,replacement},normalized:true};
+    }
+    return{value:1};
+  }catch{return null;}
 }
 
 // Adobe HDR Gain Map 1.0 in JPEG/MPF. Unsupported profiles and metadata retain
@@ -64,23 +103,32 @@ export function readGainMapJPEG(bytes){
   try{
     const primary=jpegHeaders(bytes);if(!primary)return null;
     const mpf=primary.find(s=>s.marker===226&&new TextDecoder().decode(bytes.subarray(s.data,s.data+4))==='MPF\0');if(!mpf)return null;
-    const images=mpfImages(bytes,mpf);if(!images||images.some(s=>s.length<4||s.start+s.length>bytes.length||bytes[s.start+s.length-2]!==255||bytes[s.start+s.length-1]!==217))return null;
+    const images=mpfImages(bytes,mpf);if(!images||images.some(s=>s.length<4||s.start+s.length>bytes.length)||images[1].start<=mpf.end)return null;
+    const auxiliary=images[1],gainEnd=auxiliary.start+auxiliary.length;
+    if(bytes[gainEnd-2]!==255||bytes[gainEnd-1]!==217)return null;
+    let primaryEnd=images[0].length,recovered=false;
+    if(primaryEnd!==auxiliary.start||bytes[primaryEnd-2]!==255||bytes[primaryEnd-1]!==217){
+      const actual=jpegEnd(bytes,0,auxiliary.start);
+      if(actual!==primaryEnd&&actual!==auxiliary.start)return null;
+      recovered=actual!==primaryEnd;primaryEnd=actual;
+    }
     const gain=jpegHeaders(bytes,images[1].start);if(!gain)return null;const text=xmp(bytes,primary)+'\n'+xmp(bytes,gain);
     if(field(text,'Version')!=='1.0'||/^true$/i.test(field(text,'BaseRenditionIsHDR')||'False'))return null;
     const minimum=channels(text,'GainMapMin',0),maximum=channels(text,'GainMapMax',1),gamma=channels(text,'Gamma',1),offsetSDR=channels(text,'OffsetSDR',1/64),offsetHDR=channels(text,'OffsetHDR',1/64);
     if(!minimum||!maximum||!gamma||!offsetSDR||!offsetHDR||gamma.some(v=>v<=0||v>16)||minimum.some((v,i)=>v>maximum[i]||Math.abs(v)>16)||maximum.some(v=>Math.abs(v)>16)||[...offsetSDR,...offsetHDR].some(v=>v<0||v>1))return null;
-    const colorSpace=profileSpace(bytes,primary),rotate=orientation(bytes,primary);if(!colorSpace||rotate<1||rotate>8)return null;
+    const colorSpace=profileSpace(bytes,primary),rotate=orientation(bytes,primary);if(!colorSpace||!rotate)return null;
     // Remove only the gain-map metadata and MPF link from the temporary base
     // decode. EXIF orientation and the original ICC profile are retained.
-    const excluded=primary.filter(s=>s===mpf||s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.end)).includes('http://ns.adobe.com/hdr-gain-map/1.0/'));
-    const pieces=[];let p=0;for(const s of excluded){pieces.push(bytes.subarray(p,s.start));p=s.end;}pieces.push(bytes.subarray(p,images[0].length));
-    return{base:pieces,gain:bytes.subarray(images[1].start,images[1].start+images[1].length),metadata:{minimum,maximum,gamma,offsetSDR,offsetHDR},colorSpace,orientation:rotate};
+    const edits=primary.filter(s=>s===mpf||s.marker===225&&new TextDecoder().decode(bytes.subarray(s.data,s.end)).includes('http://ns.adobe.com/hdr-gain-map/1.0/'));
+    if(rotate.segment)edits.push(rotate.segment);edits.sort((a,b)=>a.start-b.start);
+    const pieces=[];let p=0;for(const s of edits){pieces.push(bytes.subarray(p,s.start));if(s.replacement)pieces.push(s.replacement);p=s.end;}pieces.push(bytes.subarray(p,primaryEnd));
+    return{base:pieces,gain:bytes.subarray(auxiliary.start,gainEnd),metadata:{minimum,maximum,gamma,offsetSDR,offsetHDR},colorSpace,orientation:rotate.value,preferCanvasHDR:recovered||Boolean(rotate.normalized)};
   }catch{return null;}
 }
 
-export async function decodeGainMapTransition(file,image,viewport){
+export async function decodeGainMapTransition(file,image,viewport,{compatibilityOnly=false}={}){
   if(!file||!/^image\/jpeg$/i.test(file.type)&&!/\.jpe?g$/i.test(file.name))return null;
-  const parsed=readGainMapJPEG(new Uint8Array(await file.arrayBuffer()));if(!parsed)return null;
+  const parsed=readGainMapJPEG(new Uint8Array(await file.arrayBuffer()));if(!parsed||compatibilityOnly&&!parsed.preferCanvasHDR)return null;
   let base,gain;
   try{
     // Decode a bounded preview at twice the output size, then filter the
@@ -98,6 +146,7 @@ export async function decodeGainMapTransition(file,image,viewport){
     const transforms={1:[1,0,0,1,0,0],2:[-1,0,0,1,width,0],3:[-1,0,0,-1,width,height],4:[1,0,0,-1,0,height],5:[0,1,1,0,0,0],6:[0,1,-1,0,width,0],7:[0,-1,-1,0,width,height],8:[0,-1,1,0,0,height]};
     gainContext.setTransform(...transforms[parsed.orientation]);gainContext.drawImage(gain,0,0,rawWidth,rawHeight);gainContext.resetTransform();const gains=gainContext.getImageData(0,0,width,height).data;
     canvas.width=canvas.height=gainCanvas.width=gainCanvas.height=1;
-    return await processGainMapPixels(pixels,gains,width,height,parsed.colorSpace,parsed.metadata,viewport);
+    const source=await processGainMapPixels(pixels,gains,width,height,parsed.colorSpace,parsed.metadata,viewport);
+    source.preferCanvasHDR=parsed.preferCanvasHDR;return source;
   }catch{return null;}finally{base?.close();gain?.close();}
 }
